@@ -1,8 +1,11 @@
-from huggingface_hub import hf_hub_download
+from convokit import Corpus, download
 
-path = hf_hub_download(
-    repo_id="Zihan1004/FNSPID",
-    filename="Stock_news/nasdaq_exteral_data.csv",
-    repo_type="dataset",
-    local_dir="./data/fnspid"
-)
+wsb_corpus       = Corpus(filename=download("subreddit-wallstreetbets"))
+stocks_corpus    = Corpus(filename=download("subreddit-stocks"))
+investing_corpus = Corpus(filename=download("subreddit-investing"))
+
+# Alternative merge using corpus list
+merged_corpus = Corpus.merge(wsb_corpus, stocks_corpus)
+merged_corpus = Corpus.merge(merged_corpus, investing_corpus)
+
+merged_corpus.print_summary_stats()
