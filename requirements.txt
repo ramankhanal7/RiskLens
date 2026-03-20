@@ -6,6 +6,6 @@ Werkzeug==2.2.2
 gunicorn==25.0.3
 python-dotenv
 convokit
-numpy
 pandas
+finnhub-python
 git+https://github.com/MrPeterss/infosci-spark-client.git
