@@ -5,6 +5,7 @@ To enable AI chat, set USE_LLM = True below. See llm_routes.py for AI code.
 """
 import json
 import os
+from datetime import date, timedelta
 from flask import send_from_directory, request, jsonify
 from models import db, Episode, Review
 
@@ -49,6 +50,36 @@ def register_routes(app):
     def episodes_search():
         text = request.args.get("title", "")
         return jsonify(json_search(text))
+
+    @app.route("/api/sentiment")
+    def sentiment():
+        ticker = request.args.get("ticker", "").strip().upper()
+        if not ticker:
+            return jsonify({"error": "ticker required"}), 400
+        today = date.today()
+        from_date = (today - timedelta(days=30)).strftime("%Y-%m-%d")
+        to_date = today.strftime("%Y-%m-%d")
+        try:
+            from financial_data import score_portfolio
+            scores = score_portfolio([ticker], from_date, to_date)
+            return jsonify({"ticker": ticker, "score": scores.get(ticker, 0.0)})
+        except Exception as e:
+            return jsonify({"error": str(e)}), 500
+
+    @app.route("/api/search")
+    def market_search():
+        q = request.args.get("q", "").strip()
+        if not q:
+            return jsonify([])
+        try:
+            from query import search
+            results = search(q)
+            return jsonify([
+                {"score": r.score, "tickers": r.tickers, "title": r.title, "url": r.url}
+                for r in results
+            ])
+        except Exception as e:
+            return jsonify({"error": str(e)}), 500
 
     if USE_LLM:
         from llm_routes import register_chat_route
