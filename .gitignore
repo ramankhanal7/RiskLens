@@ -29,7 +29,5 @@ package-lock.json
 .env
 
 # data
-data/.cache/
-data/Stock_news/
-data/nasdaq_exteral_data.csv
-data/fnspid_sample_gradescope.csv
+data/
+models/
