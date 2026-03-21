@@ -124,7 +124,7 @@ def score_portfolio(
 
 
 if __name__ == "__main__":
-    tickers = ["AAPL", "MSFT", "NVDA"]
-    scores = score_portfolio(tickers, from_date="2025-06-01", to_date="2025-06-20")
+    tickers = ["AAPL", "MSFT", "NVDA", "TSLA"]
+    scores = score_portfolio(tickers, from_date="2025-01-01", to_date="2025-03-31")
     for ticker, score in scores.items():
         print(f"{ticker}: {score:+.4f}")
