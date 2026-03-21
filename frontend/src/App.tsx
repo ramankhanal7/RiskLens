@@ -5,8 +5,8 @@ import { WatchlistItem, SearchResult } from './types'
 const STORAGE_KEY = 'risklens-watchlist'
 
 function scoreToStatus(score: number): 'safe' | 'neutral' | 'caution' {
-  if (score > 1.0) return 'safe'
-  if (score < -1.0) return 'caution'
+  if (score > 0.5) return 'safe'
+  if (score < -0.5) return 'caution'
   return 'neutral'
 }
 
@@ -25,7 +25,11 @@ function App(): JSX.Element {
   const [watchlist, setWatchlist] = useState<WatchlistItem[]>(() => {
     try {
       const saved = localStorage.getItem(STORAGE_KEY)
-      return saved ? JSON.parse(saved) : []
+      if (!saved) return []
+      const items: WatchlistItem[] = JSON.parse(saved)
+      return items.map(w =>
+        w.score !== null ? { ...w, status: scoreToStatus(w.score) } : w
+      )
     } catch {
       return []
     }
@@ -171,9 +175,9 @@ function App(): JSX.Element {
 
           {/* Legend */}
           <div className="legend">
-            <span className="legend-item"><span className="dot dot-safe" />Safe (&gt;+1.0)</span>
+            <span className="legend-item"><span className="dot dot-safe" />Safe (&gt;+0.5)</span>
             <span className="legend-item"><span className="dot dot-neutral" />Neutral</span>
-            <span className="legend-item"><span className="dot dot-caution" />Caution (&lt;-1.0)</span>
+            <span className="legend-item"><span className="dot dot-caution" />Caution (&lt;-0.5)</span>
           </div>
         </section>
 
