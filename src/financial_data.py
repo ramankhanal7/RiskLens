@@ -8,14 +8,17 @@ from pathlib import Path
 env_path = Path(__file__).resolve().parent.parent / ".env"
 load_dotenv(dotenv_path=env_path)
 finnhub_api_key = os.getenv("FINNHUB_API_KEY")
+ROOT = Path(__file__).resolve().parent.parent
+DATA_DIR = ROOT / "data"
+SENTIMENT_LEXICON_PATH = DATA_DIR / "sentiment_lexicon.json"
 
-def load_sentiment_lexicon(filepath: str = "data/sentiment_lexicon.json") -> tuple[set[str], set[str]]:
+def load_sentiment_lexicon(filepath: str | Path = SENTIMENT_LEXICON_PATH) -> tuple[set[str], set[str]]:
     """
     Loads sentiment_lexicon.json with shape:
         { "positive": [...], "negative": [...] }
     Returns (positive_words, negative_words) as sets for O(1) lookup.
     """
-    with open(filepath, "r", encoding="utf-8") as f:
+    with Path(filepath).open("r", encoding="utf-8") as f:
         lexicon = json.load(f)
     return set(w.lower() for w in lexicon["positive"]), \
            set(w.lower() for w in lexicon["negative"])
@@ -65,7 +68,7 @@ def score_portfolio(
     tickers: list[str],
     from_date: str,
     to_date: str,
-    lexicon_path: str = "data/sentiment_lexicon.json",
+    lexicon_path: str | Path = SENTIMENT_LEXICON_PATH,
 ) -> dict[str, float]:
     """
     Fetches company-specific news from Finnhub for each ticker and

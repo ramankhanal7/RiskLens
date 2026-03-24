@@ -28,9 +28,12 @@ WORKDIR $CONTAINER_HOME
 
 COPY --from=python-deps /usr/local/lib/python3.10/site-packages /usr/local/lib/python3.10/site-packages
 COPY src/                   $CONTAINER_HOME/src/
-COPY data/                  $CONTAINER_HOME/src/data/
+COPY data/                  $CONTAINER_HOME/data/
 COPY nasdaqlisted.txt       $CONTAINER_HOME/
 COPY company_tickers.json   $CONTAINER_HOME/
 COPY --from=frontend-build /app/frontend/dist $CONTAINER_HOME/frontend/dist
+
+RUN python -m nltk.downloader -d /usr/local/share/nltk_data stopwords punkt punkt_tab
+RUN python -m src.search_assets
 
 CMD ["python", "-m", "gunicorn", "--chdir", "src", "app:app", "--bind", "0.0.0.0:5000", "--log-level", "debug"]
