@@ -9,4 +9,6 @@ convokit
 pandas
 finnhub-python
 nltk
+numpy
+scikit-learn
 git+https://github.com/MrPeterss/infosci-spark-client.git
