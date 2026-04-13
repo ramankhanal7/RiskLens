@@ -70,9 +70,9 @@ def build_lsa(corpus: list[dict], save: bool = True) -> LsaIndex:
         max_features=20000,
         min_df=2,
         max_df=0.95,
-        stop_words="english",
+        sublinear_tf=True,
         analyzer="word",
-        token_pattern=r"(?u)\b\w+\b",  # tokens already clean/stemmed
+        token_pattern=r"(?u)\b\w+\b",
     )
     tfidf_matrix = vectorizer.fit_transform(corpus_texts)
     print(f"TF-IDF matrix : {tfidf_matrix.shape}")
@@ -125,12 +125,12 @@ def load_lsa(corpus: list[dict]) -> LsaIndex:
 # ---------------------------------------------------------------------------
 # Query helpers
 # ---------------------------------------------------------------------------
-def _project_query(lsa_index: LsaIndex, query_text: str) -> np.ndarray:
-    """Transform a raw query string into the LSA latent space (L2-normalized)."""
-    query_tfidf = lsa_index.vectorizer.transform([query_text])   # (1, vocab)
-    query_vec = lsa_index.svd.transform(query_tfidf)             # (1, N_COMPONENTS)
+def _project_query(lsa_index: LsaIndex, preprocessed_text: str) -> np.ndarray:
+    """Transform a pre-stemmed query string into the LSA latent space (L2-normalized)."""
+    query_tfidf = lsa_index.vectorizer.transform([preprocessed_text])  # (1, vocab)
+    query_vec = lsa_index.svd.transform(query_tfidf)                   # (1, N_COMPONENTS)
     query_vec = normalize(query_vec)
-    return query_vec.squeeze()                                    # (N_COMPONENTS,)
+    return query_vec.squeeze()                                          # (N_COMPONENTS,)
 
 
 def lsa_retrieve(
@@ -144,7 +144,11 @@ def lsa_retrieve(
     Returns:
         [{"doc": {...}, "score": float, "method": "lsa"}, ...]
     """
-    query_vec = _project_query(lsa_index, query_text)
+    from src.retrieval import _preprocess
+    tokens = _preprocess(query_text)
+    if not tokens:
+        return []
+    query_vec = _project_query(lsa_index, " ".join(tokens))
 
     # Cosine similarity = dot product because both sides are L2-normalized
     scores = lsa_index.doc_vectors @ query_vec  # (n_docs,)
@@ -198,11 +202,12 @@ def hybrid_retrieve(
     if not tokens:
         return []
 
-    query_tfidf_vec = tfidf_index.vectorizer.transform([" ".join(tokens)])
+    stemmed_query = " ".join(tokens)
+    query_tfidf_vec = tfidf_index.vectorizer.transform([stemmed_query])
     tfidf_scores = cosine_similarity(query_tfidf_vec, tfidf_index.tfidf_matrix).flatten()
 
     # --- LSA scores (all documents) ---
-    query_lsa_vec = _project_query(lsa_index, query_text)
+    query_lsa_vec = _project_query(lsa_index, stemmed_query)
     lsa_scores = lsa_index.doc_vectors @ query_lsa_vec  # (n_docs,)
 
     # --- Normalize both to [0, 1] ---

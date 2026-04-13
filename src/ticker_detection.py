@@ -229,11 +229,13 @@ COMPANY_NAME_MAP: list[tuple[re.Pattern, str]] = [
 # ---------------------------------------------------------------------------
 # Pass 3b — ticker_association.json keyword map
 # ---------------------------------------------------------------------------
-_ASSOC_PATH = Path(__file__).parent.parent / "data" / "ticker_association.json"
+_ASSOC_PATH = Path(__file__).parent.parent / "data" / "ticker_associations.json"
 
 # Maps compiled regex pattern → ticker.
 # Also expands SP500_TICKERS with every ticker found in the association file.
 KEYWORD_MAP: list[tuple[re.Pattern, str]] = []
+
+_MIN_ALIAS_LEN = 3  # skip 1-2 char aliases (e.g. "GE", "IT") — already caught by Pass 2
 
 def _load_association() -> None:
     """Load ticker_association.json and build KEYWORD_MAP + expand SP500_TICKERS."""
@@ -243,16 +245,15 @@ def _load_association() -> None:
     with _ASSOC_PATH.open(encoding="utf-8") as f:
         assoc: dict = json.load(f)
 
-    # Add all tickers from the association file to the whitelist
     for ticker in assoc:
         SP500_TICKERS.add(ticker)
 
-    # Build keyword → ticker patterns.
-    # Sort longest keyword first so multi-word phrases match before substrings.
     entries: list[tuple[str, str]] = []
     for ticker, data in assoc.items():
-        for kw in data.get("keywords", []):
-            entries.append((kw, ticker))
+        for alias in data.get("aliases", []):
+            if len(alias) < _MIN_ALIAS_LEN:
+                continue
+            entries.append((alias, ticker))
 
     entries.sort(key=lambda x: -len(x[0]))
 

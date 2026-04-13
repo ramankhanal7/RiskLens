@@ -66,16 +66,34 @@ def register_routes(app):
         except Exception as e:
             return jsonify({"error": str(e)}), 500
 
+    @app.route("/api/validate-ticker")
+    def validate_ticker():
+        ticker = request.args.get("ticker", "").strip().upper()
+        if not ticker:
+            return jsonify({"ticker": "", "valid": False, "name": None})
+        from ticker_validation import is_valid_ticker, get_company_name
+        valid = is_valid_ticker(ticker)
+        name = get_company_name(ticker) if valid else None
+        return jsonify({"ticker": ticker, "valid": valid, "name": name})
+
     @app.route("/api/search")
     def market_search():
         q = request.args.get("q", "").strip()
+        mode = request.args.get("mode", "hybrid").strip().lower()
+        source_filter = request.args.get("source", "").strip().lower()
         if not q:
             return jsonify([])
         try:
             from query import search
-            results = search(q)
+            results = search(q, mode=mode)
+            if source_filter in ("news", "reddit"):
+                results = [r for r in results if r.source == source_filter]
             return jsonify([
-                {"score": r.score, "tickers": r.tickers, "title": r.title, "url": r.url}
+                {
+                    "score": r.score, "tickers": r.tickers, "title": r.title,
+                    "url": r.url, "snippet": r.snippet, "date": r.date,
+                    "source": r.source,
+                }
                 for r in results
             ])
         except Exception as e:

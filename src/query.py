@@ -27,6 +27,8 @@ from src.corpus import load_corpus
 from src.retrieval import build_index, query as tfidf_query, Index
 from src.lsa import load_lsa, hybrid_retrieve, lsa_retrieve, LsaIndex
 
+VALID_MODES = {"hybrid", "tfidf", "lsa"}
+
 TOP_K = 10
 
 # ---------------------------------------------------------------------------
@@ -39,6 +41,9 @@ class QueryResult:
     tickers: list[str]
     title: str
     url: str
+    snippet: str
+    date: str
+    source: str
 
 
 # ---------------------------------------------------------------------------
@@ -63,35 +68,53 @@ def _ensure_indices() -> tuple[Index, LsaIndex]:
 # Public API
 # ---------------------------------------------------------------------------
 
-def search(user_query: str, top_k: int = TOP_K) -> list[QueryResult]:
+def search(user_query: str, top_k: int = TOP_K, mode: str = "hybrid") -> list[QueryResult]:
     """
-    Run the hybrid IR pipeline for a user query and return ranked results.
+    Run the IR pipeline for a user query and return ranked results.
 
     Args:
         user_query: Free-form text query from the frontend.
         top_k:      Maximum number of results to return (default 10).
+        mode:       Retrieval method — "hybrid", "tfidf", or "lsa".
 
     Returns:
         List of QueryResult objects sorted by descending score.
     """
+    if mode not in VALID_MODES:
+        mode = "hybrid"
     tfidf_idx, lsa_idx = _ensure_indices()
-    raw_results = hybrid_retrieve(lsa_idx, tfidf_idx, user_query, top_k=top_k)
+
+    if mode == "tfidf":
+        raw_results = tfidf_query(tfidf_idx, user_query, top_k=top_k)
+    elif mode == "lsa":
+        raw_results = lsa_retrieve(lsa_idx, user_query, top_k=top_k)
+    else:
+        raw_results = hybrid_retrieve(lsa_idx, tfidf_idx, user_query, top_k=top_k)
+
     return [_to_result(r) for r in raw_results]
 
 
 def _to_result(r: dict) -> QueryResult:
     doc = r["doc"]
     tickers: list[str] = doc.get("ticker") or []
+    raw = doc.get("raw_text", "")
     if doc.get("source") == "news":
-        title = (doc.get("metadata") or {}).get("headline", doc.get("raw_text", ""))
+        title = (doc.get("metadata") or {}).get("headline", raw)
     else:
-        text = doc.get("raw_text", "")
-        title = text[:150].rsplit(" ", 1)[0] + "…" if len(text) > 150 else text
+        title = raw[:150].rsplit(" ", 1)[0] + "…" if len(raw) > 150 else raw
+
+    snippet = raw[:200].rsplit(" ", 1)[0] + "…" if len(raw) > 200 else raw
+    if snippet == title:
+        snippet = ""
+
     return QueryResult(
         score=round(float(r["score"]), 4),
         tickers=tickers,
         title=title,
         url=doc.get("url", ""),
+        snippet=snippet,
+        date=doc.get("date", ""),
+        source=doc.get("source", ""),
     )
 
 

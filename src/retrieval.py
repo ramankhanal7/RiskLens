@@ -10,8 +10,7 @@ Usage:
 """
 
 import string
-from collections import defaultdict
-from dataclasses import dataclass, field
+from dataclasses import dataclass
 
 import nltk
 from nltk.corpus import stopwords
@@ -47,7 +46,6 @@ def _preprocess(text: str) -> list[str]:
 @dataclass
 class Index:
     docs: list[dict]
-    inverted_index: dict[str, list[int]]          # token → [doc indices]
     vectorizer: TfidfVectorizer
     tfidf_matrix: object                           # scipy sparse (n_docs × vocab)
 
@@ -57,37 +55,30 @@ class Index:
 # ---------------------------------------------------------------------------
 def build_index(corpus: list[dict]) -> Index:
     """
-    Build an inverted index and TF-IDF matrix from a loaded corpus.
+    Build a TF-IDF matrix from a loaded corpus.
 
     Each document's `tokens` list (pre-stemmed) is joined into a whitespace
     string and fed to TfidfVectorizer with analyzer='word' so no further
     tokenization is applied — preserving the stemming done at ingest time.
-    """
-    # --- inverted index ---
-    inv: dict[str, list[int]] = defaultdict(list)
-    for idx, doc in enumerate(corpus):
-        seen = set()
-        for token in doc.get("tokens", []):
-            if token not in seen:
-                inv[token].append(idx)
-                seen.add(token)
 
-    # --- TF-IDF matrix ---
-    # Join pre-stemmed tokens so the vectorizer does a simple whitespace split
+    Vectorizer settings are unified with lsa.py so hybrid fusion operates
+    on a consistent feature space.
+    """
     token_strings = [" ".join(doc.get("tokens", [])) for doc in corpus]
 
     vectorizer = TfidfVectorizer(
         analyzer="word",
-        tokenizer=lambda x: x.split(),   # tokens already clean
+        tokenizer=lambda x: x.split(),
         token_pattern=None,
-        sublinear_tf=True,                # log(1 + tf) dampens high-freq terms
-        min_df=2,                         # ignore tokens appearing in only 1 doc
+        max_features=20000,
+        min_df=2,
+        max_df=0.95,
+        sublinear_tf=True,
     )
     tfidf_matrix = vectorizer.fit_transform(token_strings)
 
     return Index(
         docs=corpus,
-        inverted_index=dict(inv),
         vectorizer=vectorizer,
         tfidf_matrix=tfidf_matrix,
     )
