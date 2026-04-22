@@ -123,6 +123,118 @@ def load_lsa(corpus: list[dict]) -> LsaIndex:
 
 
 # ---------------------------------------------------------------------------
+# SVD explainability helpers
+# ---------------------------------------------------------------------------
+def get_top_terms_per_component(
+    svd: TruncatedSVD,
+    vectorizer: TfidfVectorizer,
+    n_terms: int = 8,
+) -> dict[int, list[str]]:
+    """
+    For each SVD component, return the n_terms with the highest absolute
+    weight.  These serve as human-readable topic labels for the latent
+    dimension.
+    """
+    terms = vectorizer.get_feature_names_out()
+    result: dict[int, list[str]] = {}
+    for i, component in enumerate(svd.components_):
+        top_idx = np.argsort(np.abs(component))[::-1][:n_terms]
+        result[i] = [terms[j] for j in top_idx]
+    return result
+
+
+def explain_query(
+    lsa_index: LsaIndex,
+    preprocessed_text: str,
+    top_k_dims: int = 5,
+) -> dict:
+    """
+    Explain how a preprocessed query maps into the SVD latent space.
+
+    Returns
+    -------
+    {
+        "query_vector": np.ndarray,           # full projection (N_COMPONENTS,)
+        "active_dimensions": [
+            {
+                "index": int,
+                "weight": float,              # absolute magnitude
+                "signed_weight": float,       # with sign
+                "top_terms": [str, ...],
+            },
+            ...
+        ],
+        "svd_info": {
+            "n_components": int,
+            "explained_variance": float,
+        },
+    }
+    """
+    query_vec = _project_query(lsa_index, preprocessed_text)
+    term_map = get_top_terms_per_component(
+        lsa_index.svd, lsa_index.vectorizer, n_terms=8
+    )
+
+    # Top-K dimensions by absolute activation
+    abs_weights = np.abs(query_vec)
+    top_idx = np.argsort(abs_weights)[::-1][:top_k_dims]
+
+    active_dims = [
+        {
+            "index": int(idx),
+            "weight": round(float(abs_weights[idx]), 4),
+            "signed_weight": round(float(query_vec[idx]), 4),
+            "top_terms": term_map.get(int(idx), []),
+        }
+        for idx in top_idx
+        if abs_weights[idx] > 0.001
+    ]
+
+    return {
+        "query_vector": query_vec,
+        "active_dimensions": active_dims,
+        "svd_info": {
+            "n_components": int(lsa_index.svd.n_components),
+            "explained_variance": round(
+                float(lsa_index.svd.explained_variance_ratio_.sum()), 4
+            ),
+        },
+    }
+
+
+def explain_result(
+    lsa_index: LsaIndex,
+    doc_idx: int,
+    query_vec: np.ndarray,
+    top_k_dims: int = 3,
+) -> list[dict]:
+    """
+    For a single retrieved document, return which latent dimensions
+    contributed most to the cosine-similarity match.
+
+    The contribution of dimension d is  query_vec[d] * doc_vec[d].
+    """
+    doc_vec = lsa_index.doc_vectors[doc_idx]
+    contributions = query_vec * doc_vec           # element-wise
+    abs_contributions = np.abs(contributions)
+    top_idx = np.argsort(abs_contributions)[::-1][:top_k_dims]
+
+    term_map = get_top_terms_per_component(
+        lsa_index.svd, lsa_index.vectorizer, n_terms=5
+    )
+
+    return [
+        {
+            "index": int(idx),
+            "contribution": round(float(contributions[idx]), 4),
+            "top_terms": term_map.get(int(idx), []),
+        }
+        for idx in top_idx
+        if abs_contributions[idx] > 0.0001
+    ]
+
+
+# ---------------------------------------------------------------------------
 # Query helpers
 # ---------------------------------------------------------------------------
 def _project_query(lsa_index: LsaIndex, preprocessed_text: str) -> np.ndarray:

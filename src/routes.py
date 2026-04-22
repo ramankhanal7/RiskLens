@@ -5,14 +5,14 @@ To enable AI chat, set USE_LLM = True below. See llm_routes.py for AI code.
 """
 import json
 import os
+from dataclasses import asdict
 from datetime import date, timedelta
 from flask import send_from_directory, request, jsonify
 from models import db, Episode, Review
 
-# ── AI toggle ────────────────────────────────────────────────────────────────
-USE_LLM = False
-# USE_LLM = True
-# ─────────────────────────────────────────────────────────────────────────────
+# -- AI toggle ----------------------------------------------------------------
+USE_LLM = True
+# ------------------------------------------------------------------------------
 
 
 def json_search(query):
@@ -82,23 +82,36 @@ def register_routes(app):
         mode = request.args.get("mode", "hybrid").strip().lower()
         source_filter = request.args.get("source", "").strip().lower()
         if not q:
-            return jsonify([])
+            return jsonify({"results": [], "query_info": {}, "svd_info": {}})
         try:
             from query import search
-            results = search(q, mode=mode)
+            response = search(q, mode=mode)
+            results_list = response.results
             if source_filter in ("news", "reddit"):
-                results = [r for r in results if r.source == source_filter]
-            return jsonify([
-                {
-                    "score": r.score, "tickers": r.tickers, "title": r.title,
-                    "url": r.url, "snippet": r.snippet, "date": r.date,
-                    "source": r.source,
-                }
-                for r in results
-            ])
+                results_list = [r for r in results_list if r.source == source_filter]
+            return jsonify({
+                "results": [
+                    {
+                        "score": r.score, "tickers": r.tickers, "title": r.title,
+                        "url": r.url, "snippet": r.snippet, "date": r.date,
+                        "source": r.source,
+                    }
+                    for r in results_list
+                ],
+                "query_info": {
+                    "preprocessed_query": response.preprocessed_query,
+                    "active_dimensions": [
+                        asdict(d) for d in response.query_dimensions
+                    ],
+                },
+                "svd_info": {
+                    "n_components": response.svd_n_components,
+                    "explained_variance": response.svd_explained_variance,
+                },
+            })
         except Exception as e:
             return jsonify({"error": str(e)}), 500
 
     if USE_LLM:
         from llm_routes import register_chat_route
-        register_chat_route(app, json_search)
+        register_chat_route(app)
