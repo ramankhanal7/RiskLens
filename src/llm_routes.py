@@ -110,6 +110,59 @@ def synthesize_answer(
     return (response.get("content") or "Unable to generate summary.").strip()
 
 
+def identify_relevant_tickers(
+    client: LLMClient,
+    user_query: str,
+    ir_results: list[dict],
+) -> list[dict]:
+    """
+    Ask the LLM to pick the tickers most affected by/relevant to the query,
+    based on the IR results. Returns a list of {ticker, reason} dicts.
+    """
+    all_tickers = set()
+    for r in ir_results:
+        for t in r.get("tickers", []):
+            all_tickers.add(t)
+    if not all_tickers:
+        return []
+
+    ticker_list = ", ".join(sorted(all_tickers))
+    messages = [
+        {
+            "role": "system",
+            "content": (
+                "You are a financial analyst. Given a user query and a list of stock "
+                "tickers that appeared in related news/Reddit articles, identify which "
+                "tickers are MOST directly affected by or relevant to the query topic.\n\n"
+                "Rules:\n"
+                "- Select only genuinely relevant tickers (max 8)\n"
+                "- For each, give a brief 5-10 word reason why it's relevant\n"
+                "- Reply as a JSON array: [{\"ticker\": \"NVDA\", \"reason\": \"Major AI chip maker affected by export controls\"}]\n"
+                "- Return ONLY the JSON array, no other text"
+            ),
+        },
+        {
+            "role": "user",
+            "content": (
+                f"Query: {user_query}\n"
+                f"Tickers found in articles: {ticker_list}"
+            ),
+        },
+    ]
+    try:
+        resp = client.chat(messages)
+        content = (resp.get("content") or "[]").strip()
+        # Extract JSON array from response
+        import re
+        match = re.search(r'\[.*\]', content, re.DOTALL)
+        if match:
+            import json as json_mod
+            return json_mod.loads(match.group())
+    except Exception as e:
+        logger.warning(f"Ticker identification failed: {e}")
+    return [{"ticker": t, "reason": ""} for t in sorted(all_tickers)[:8]]
+
+
 # ---------------------------------------------------------------------------
 # Route registration
 # ---------------------------------------------------------------------------
@@ -148,13 +201,16 @@ def register_chat_route(app):
                 {
                     "score": r.score, "tickers": r.tickers, "title": r.title,
                     "url": r.url, "snippet": r.snippet, "date": r.date,
-                    "source": r.source,
+                    "source": r.source, "sentiment": r.sentiment,
                 }
                 for r in results_list
             ]
 
             # Step 3 — Feed IR results to LLM for synthesis
             llm_summary = synthesize_answer(client, user_query, ir_results)
+
+            # Step 4 — LLM identifies most relevant tickers
+            relevant_tickers = identify_relevant_tickers(client, user_query, ir_results)
 
             return jsonify({
                 "original_query": user_query,
@@ -171,8 +227,10 @@ def register_chat_route(app):
                     "explained_variance": response.svd_explained_variance,
                 },
                 "llm_summary": llm_summary,
+                "relevant_tickers": relevant_tickers,
             })
 
         except Exception as e:
             logger.error(f"RAG pipeline error: {e}", exc_info=True)
             return jsonify({"error": str(e)}), 500
+

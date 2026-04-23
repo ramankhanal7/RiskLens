@@ -26,6 +26,7 @@ sys.path.insert(0, str(Path(__file__).parent.parent))
 from src.corpus import load_corpus
 from src.retrieval import build_index, query as tfidf_query, Index, _preprocess
 from src.lsa import load_lsa, hybrid_retrieve, lsa_retrieve, LsaIndex, explain_query
+from src.financial_data import load_sentiment_lexicon, tokenize
 
 VALID_MODES = {"hybrid", "tfidf", "lsa"}
 
@@ -44,6 +45,7 @@ class QueryResult:
     snippet: str
     date: str
     source: str
+    sentiment: float  # in [-1, 1]: positive > 0, negative < 0
 
 
 @dataclass
@@ -186,6 +188,30 @@ def search(user_query: str, top_k: int = TOP_K, mode: str = "hybrid") -> SearchR
     )
 
 
+# Lazy-loaded sentiment lexicon
+_pos_words: Optional[set] = None
+_neg_words: Optional[set] = None
+
+
+def _get_lexicon() -> tuple[set, set]:
+    global _pos_words, _neg_words
+    if _pos_words is None:
+        _pos_words, _neg_words = load_sentiment_lexicon()
+    return _pos_words, _neg_words
+
+
+def _compute_sentiment(text: str) -> float:
+    """Score text sentiment in [-1, 1] using the financial lexicon."""
+    pos_words, neg_words = _get_lexicon()
+    tokens = tokenize(text)
+    pos = sum(1 for t in tokens if t in pos_words)
+    neg = sum(1 for t in tokens if t in neg_words)
+    total = pos + neg
+    if total == 0:
+        return 0.0
+    return (pos - neg) / total
+
+
 def _to_result(r: dict) -> QueryResult:
     doc = r["doc"]
     tickers: list[str] = doc.get("ticker") or []
@@ -199,6 +225,8 @@ def _to_result(r: dict) -> QueryResult:
     if snippet == title:
         snippet = ""
 
+    sentiment = _compute_sentiment(raw)
+
     return QueryResult(
         score=round(float(r["score"]), 4),
         tickers=tickers,
@@ -207,6 +235,7 @@ def _to_result(r: dict) -> QueryResult:
         snippet=snippet,
         date=doc.get("date", ""),
         source=doc.get("source", ""),
+        sentiment=round(sentiment, 4),
     )
 
 

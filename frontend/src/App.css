@@ -112,7 +112,7 @@ body {
 
 .research-layout {
   display: grid;
-  grid-template-columns: 1fr 220px;
+  grid-template-columns: 1fr 300px;
   gap: 24px;
   align-items: start;
 }
@@ -728,6 +728,207 @@ body {
   border-radius: 6px;
 }
 
+/* ── Insights sidebar ────────────────────────────────────────────────────── */
+
+.insights-panel {
+  background: #12161f;
+  border: 1px solid #1e2330;
+  border-radius: 12px;
+  padding: 16px;
+  position: sticky;
+  top: 20px;
+  max-height: calc(100vh - 140px);
+  overflow-y: auto;
+}
+
+.insights-title {
+  font-size: 14px;
+  font-weight: 700;
+  color: #e2e8f0;
+  margin-bottom: 12px;
+  padding-bottom: 8px;
+  border-bottom: 1px solid #1e2330;
+}
+
+.insight-section {
+  border: 1px solid #1e2330;
+  border-radius: 8px;
+  margin-bottom: 8px;
+  overflow: hidden;
+}
+
+.insight-section:last-child {
+  margin-bottom: 0;
+}
+
+.insight-toggle {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  width: 100%;
+  padding: 10px 12px;
+  background: none;
+  border: none;
+  cursor: pointer;
+  font-size: 12px;
+  font-weight: 700;
+  color: #94a3b8;
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+  transition: background 0.15s;
+}
+
+.insight-toggle:hover {
+  background: rgba(30, 35, 48, 0.6);
+}
+
+.insight-chevron {
+  font-size: 11px;
+  color: #4a5568;
+}
+
+.insight-body {
+  padding: 0 12px 12px;
+}
+
+.insight-description {
+  font-size: 10px;
+  color: #4a5568;
+  line-height: 1.4;
+  margin-bottom: 8px;
+}
+
+/* ── Related stocks (in sidebar) ─────────────────────────────────────────── */
+
+.insights-panel .related-list {
+  list-style: none;
+  padding: 0;
+  margin: 0;
+}
+
+.insights-panel .related-item {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 5px;
+  padding: 10px 14px;
+  border-bottom: 1px solid #1a1f2e;
+  text-align: center;
+}
+
+.insights-panel .related-item:last-child {
+  border-bottom: none;
+  padding-bottom: 4px;
+}
+
+.related-ticker {
+  font-size: 13px;
+  font-weight: 700;
+  color: #e2e8f0;
+}
+
+.portfolio-tag {
+  font-size: 9px;
+  font-weight: 700;
+  color: #22c55e;
+  background: rgba(34, 197, 94, 0.1);
+  border: 1px solid rgba(34, 197, 94, 0.2);
+  padding: 1px 5px;
+  border-radius: 3px;
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+}
+
+.related-reason {
+  font-size: 10px;
+  color: #64748b;
+  line-height: 1.4;
+}
+
+.insights-panel .btn-add-small {
+  margin-top: 2px;
+}
+
+/* ── Ticker exposure chart ───────────────────────────────────────────────── */
+
+.exposure-chart {
+  display: flex;
+  flex-direction: column;
+  gap: 5px;
+}
+
+.exposure-row {
+  display: grid;
+  grid-template-columns: 42px 1fr 24px;
+  gap: 6px;
+  align-items: center;
+}
+
+.exposure-label {
+  font-family: 'JetBrains Mono', 'Fira Code', 'Courier New', monospace;
+  font-size: 10px;
+  font-weight: 700;
+  color: #94a3b8;
+}
+
+.exposure-bar-track {
+  height: 5px;
+  background: #1e2330;
+  border-radius: 3px;
+  overflow: hidden;
+}
+
+.exposure-bar-fill {
+  height: 100%;
+  border-radius: 3px;
+  background: linear-gradient(90deg, #3b82f6, #60a5fa);
+  transition: width 0.4s ease;
+}
+
+.exposure-count {
+  font-family: 'JetBrains Mono', 'Fira Code', 'Courier New', monospace;
+  font-size: 10px;
+  font-weight: 600;
+  color: #4a5568;
+  text-align: right;
+}
+
+/* ── Relevance timeline chart ────────────────────────────────────────────── */
+
+.timeline-chart {
+  padding-top: 4px;
+}
+
+.timeline-svg {
+  width: 100%;
+  height: 70px;
+}
+
+.timeline-legend {
+  display: flex;
+  gap: 10px;
+  justify-content: center;
+  margin-top: 4px;
+  font-size: 9px;
+}
+
+.tl-pos { color: #22c55e; }
+.tl-neu { color: #94a3b8; }
+.tl-neg { color: #ef4444; }
+
+.timeline-labels {
+  display: flex;
+  justify-content: space-around;
+  margin-top: 2px;
+}
+
+.timeline-label {
+  font-size: 8px;
+  color: #4a5568;
+  text-align: center;
+  font-variant-numeric: tabular-nums;
+}
+
 /* ── AI toggle ────────────────────────────────────────────────────────────── */
 
 .ai-toggle {
@@ -823,8 +1024,7 @@ body {
 
 .ai-summary-panel {
   background: #161b27;
-  border: 1px solid transparent;
-  border-image: linear-gradient(135deg, rgba(59, 130, 246, 0.4), rgba(59, 130, 246, 0.4)) 1;
+  border: 1px solid #1e2330;
   border-radius: 10px;
   padding: 18px 20px;
   margin-bottom: 14px;

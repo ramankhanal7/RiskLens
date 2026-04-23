@@ -2,7 +2,7 @@ import { useState, useEffect, useRef } from 'react'
 import './App.css'
 import {
   WatchlistItem, SearchResult, DimensionInfo, QueryInfo,
-  SvdInfo, SearchApiResponse, RagResponse,
+  SvdInfo, SearchApiResponse, RagResponse, RelevantTicker,
 } from './types'
 
 const STORAGE_KEY = 'risklens-watchlist'
@@ -133,7 +133,6 @@ function App(): JSX.Element {
   // SVD explainability state
   const [queryInfo, setQueryInfo] = useState<QueryInfo | null>(null)
   const [svdInfo, setSvdInfo] = useState<SvdInfo | null>(null)
-  const [showQueryAnalysis, setShowQueryAnalysis] = useState(true)
 
   // RAG / AI state
   const [aiMode, setAiMode] = useState(false)
@@ -141,6 +140,13 @@ function App(): JSX.Element {
   const [improvedQuery, setImprovedQuery] = useState('')
   const [llmSummary, setLlmSummary] = useState('')
   const [originalQuery, setOriginalQuery] = useState('')
+  const [relevantTickers, setRelevantTickers] = useState<RelevantTicker[]>([])
+
+  // Insights sidebar collapse state
+  const [showStocks, setShowStocks] = useState(true)
+  const [showTopics, setShowTopics] = useState(false)
+  const [showExposure, setShowExposure] = useState(true)
+  const [showTimeline, setShowTimeline] = useState(false)
 
   const tickerRef = useRef<HTMLInputElement>(null)
 
@@ -247,6 +253,17 @@ function App(): JSX.Element {
       setSearchResults(data.results || [])
       setQueryInfo(data.query_info || null)
       setSvdInfo(data.svd_info || null)
+      // Fetch ticker descriptions in background
+      const tickers = Array.from(new Set((data.results || []).flatMap((r: SearchResult) => r.tickers)))
+      if (tickers.length > 0) {
+        fetch('/api/ticker-context', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ query: q, tickers }),
+        }).then(r => r.json()).then(d => {
+          if (Array.isArray(d) && d.length > 0) setRelevantTickers(d)
+        }).catch(() => {})
+      }
     } catch (e: unknown) {
       setQueryError(e instanceof Error ? e.message : 'Search failed')
       setSearchResults([])
@@ -284,6 +301,7 @@ function App(): JSX.Element {
       setQueryInfo(data.query_info || null)
       setSvdInfo(data.svd_info || null)
       setLlmSummary(data.llm_summary || '')
+      setRelevantTickers(data.relevant_tickers || [])
     } catch (e: unknown) {
       setQueryError(e instanceof Error ? e.message : 'RAG search failed')
       setSearchResults([])
@@ -291,6 +309,7 @@ function App(): JSX.Element {
       setSvdInfo(null)
       setImprovedQuery('')
       setLlmSummary('')
+      setRelevantTickers([])
     } finally {
       setRagLoading(false)
       setQueryLoading(false)
@@ -306,9 +325,38 @@ function App(): JSX.Element {
   }
 
   const watchlistTickers = new Set(watchlist.map(w => w.ticker))
-  const relatedTickers = Array.from(
-    new Set(searchResults.flatMap(r => r.tickers))
-  ).filter(t => !watchlistTickers.has(t))
+
+  // For display: use LLM-curated tickers when available (from either AI or standard search)
+  const allResultTickers = Array.from(new Set(searchResults.flatMap(r => r.tickers)))
+  const displayTickers: { ticker: string; reason: string }[] = relevantTickers.length > 0
+    ? relevantTickers
+    : allResultTickers.map(t => ({ ticker: t, reason: '' }))
+
+  // Ticker exposure chart data
+  const tickerCounts: { ticker: string; count: number }[] = (() => {
+    const counts: Record<string, number> = {}
+    searchResults.forEach(r => r.tickers.forEach(t => { counts[t] = (counts[t] || 0) + 1 }))
+    return Object.entries(counts)
+      .sort((a, b) => b[1] - a[1])
+      .slice(0, 8)
+      .map(([ticker, count]) => ({ ticker, count }))
+  })()
+  const maxTickerCount = Math.max(...tickerCounts.map(t => t.count), 1)
+
+  // Sentiment timeline data (group results by date, average sentiment)
+  const timelineData: { date: string; avgSentiment: number; count: number }[] = (() => {
+    const byDate: Record<string, { total: number; count: number }> = {}
+    searchResults.forEach(r => {
+      if (!r.date) return
+      const d = r.date.split('T')[0]
+      if (!byDate[d]) byDate[d] = { total: 0, count: 0 }
+      byDate[d].total += r.sentiment
+      byDate[d].count += 1
+    })
+    return Object.entries(byDate)
+      .sort((a, b) => a[0].localeCompare(b[0]))
+      .map(([date, v]) => ({ date, avgSentiment: v.total / v.count, count: v.count }))
+  })()
 
   const displayWatchlist = sortMode === 'score'
     ? [...watchlist].sort((a, b) => (a.score ?? 99) - (b.score ?? 99))
@@ -479,42 +527,7 @@ function App(): JSX.Element {
                 </div>
               )}
 
-              {/* ── Semantic Topic Themes (SVD — only for hybrid/lsa) ──────────── */}
-              {!queryLoading && hasSearched && queryInfo && queryInfo.active_dimensions.length > 0 && retrievalMode !== 'tfidf' && (
-                <div className="query-analysis">
-                  <button
-                    className="qa-toggle"
-                    onClick={() => setShowQueryAnalysis(v => !v)}
-                  >
-                    <span className="qa-icon">⬡</span>
-                    <span className="qa-title">Semantic Topic Themes</span>
-                    <span className="qa-chevron">{showQueryAnalysis ? '▾' : '▸'}</span>
-                  </button>
 
-                  {showQueryAnalysis && (
-                    <div className="qa-body">
-                      <p className="qa-description">
-                        Our SVD model identified these topic themes as most relevant to your query.
-                        Each theme represents a cluster of related concepts found across {svdInfo ? svdInfo.n_components : 200} learned
-                        topics{svdInfo ? ` (capturing ${(svdInfo.explained_variance * 100).toFixed(1)}% of corpus patterns)` : ''}.
-                        The bar shows how strongly your query relates to each theme.
-                      </p>
-
-                      <div className="qa-meta">
-                        <span className="qa-meta-item">
-                          Processed as: <code>{queryInfo.preprocessed_query}</code>
-                        </span>
-                      </div>
-
-                      <div className="theme-list">
-                        {queryInfo.active_dimensions.map(dim => (
-                          <TopicThemeCard key={dim.index} dim={dim} maxWeight={maxDimWeight} />
-                        ))}
-                      </div>
-                    </div>
-                  )}
-                </div>
-              )}
 
               {/* ── Result count ─────────────────────────────────────────────── */}
               {!queryLoading && hasSearched && searchResults.length > 0 && (
@@ -561,23 +574,162 @@ function App(): JSX.Element {
               </div>
             </section>
 
-            {relatedTickers.length > 0 && (
-              <aside className="panel related-panel">
-                <h3 className="panel-title">Related Stocks</h3>
-                <p className="panel-subtitle">Tickers from results not in your portfolio</p>
-                <ul className="related-list">
-                  {relatedTickers.map(t => (
-                    <li key={t} className="related-item">
-                      <span className="related-ticker">{t}</span>
-                      <button
-                        className="btn-add-small"
-                        onClick={() => { addTicker(t); setActiveTab('portfolio') }}
-                      >
-                        + Add
-                      </button>
-                    </li>
-                  ))}
-                </ul>
+            {/* ── Insights Sidebar ──────────────────────────────────────────── */}
+            {hasSearched && searchResults.length > 0 && (
+              <aside className="insights-panel">
+                <h3 className="insights-title">Insights</h3>
+
+                {/* ── Related Stocks ──────────────────────────────────────── */}
+                {displayTickers.length > 0 && (
+                  <div className="insight-section">
+                    <button className="insight-toggle" onClick={() => setShowStocks(v => !v)}>
+                      <span>Related Stocks</span>
+                      <span className="insight-chevron">{showStocks ? '▾' : '▸'}</span>
+                    </button>
+                    {showStocks && (
+                      <div className="insight-body">
+                        <ul className="related-list">
+                          {displayTickers.map(({ ticker, reason }) => (
+                            <li key={ticker} className="related-item">
+                              <span className="related-ticker">{ticker}</span>
+                              {watchlistTickers.has(ticker) && (
+                                <span className="portfolio-tag">In Portfolio</span>
+                              )}
+                              {reason && <span className="related-reason">{reason}</span>}
+                              {!watchlistTickers.has(ticker) && (
+                                <button
+                                  className="btn-add-small"
+                                  onClick={() => { addTicker(ticker); setActiveTab('portfolio') }}
+                                >
+                                  + Add
+                                </button>
+                              )}
+                            </li>
+                          ))}
+                        </ul>
+                      </div>
+                    )}
+                  </div>
+                )}
+
+                {/* ── Ticker Exposure Chart ───────────────────────────────── */}
+                {tickerCounts.length > 0 && (
+                  <div className="insight-section">
+                    <button className="insight-toggle" onClick={() => setShowExposure(v => !v)}>
+                      <span>Ticker Exposure</span>
+                      <span className="insight-chevron">{showExposure ? '▾' : '▸'}</span>
+                    </button>
+                    {showExposure && (
+                      <div className="insight-body">
+                        <p className="insight-description">How often each ticker appears across results</p>
+                        <div className="exposure-chart">
+                          {tickerCounts.map(({ ticker, count }) => (
+                            <div key={ticker} className="exposure-row">
+                              <span className="exposure-label">{ticker}</span>
+                              <div className="exposure-bar-track">
+                                <div
+                                  className="exposure-bar-fill"
+                                  style={{ width: `${(count / maxTickerCount) * 100}%` }}
+                                />
+                              </div>
+                              <span className="exposure-count">{count}</span>
+                            </div>
+                          ))}
+                        </div>
+                      </div>
+                    )}
+                  </div>
+                )}
+
+                {/* ── Semantic Topic Themes ───────────────────────────────── */}
+                {queryInfo && queryInfo.active_dimensions.length > 0 && retrievalMode !== 'tfidf' && (
+                  <div className="insight-section">
+                    <button className="insight-toggle" onClick={() => setShowTopics(v => !v)}>
+                      <span>Semantic Topics</span>
+                      <span className="insight-chevron">{showTopics ? '▾' : '▸'}</span>
+                    </button>
+                    {showTopics && (
+                      <div className="insight-body">
+                        <p className="insight-description">
+                          SVD-detected topic themes ({svdInfo ? `${svdInfo.n_components} dimensions, ${(svdInfo.explained_variance * 100).toFixed(1)}% variance` : ''})
+                        </p>
+                        <div className="theme-list">
+                          {queryInfo.active_dimensions.map(dim => (
+                            <TopicThemeCard key={dim.index} dim={dim} maxWeight={maxDimWeight} />
+                          ))}
+                        </div>
+                      </div>
+                    )}
+                  </div>
+                )}
+
+                {/* ── Sentiment Timeline ──────────────────────────────────── */}
+                {timelineData.length > 1 && (
+                  <div className="insight-section">
+                    <button className="insight-toggle" onClick={() => setShowTimeline(v => !v)}>
+                      <span>Sentiment Timeline</span>
+                      <span className="insight-chevron">{showTimeline ? '▾' : '▸'}</span>
+                    </button>
+                    {showTimeline && (
+                      <div className="insight-body">
+                        <p className="insight-description">Average document sentiment over time (positive ↑ / negative ↓)</p>
+                        <div className="timeline-chart">
+                          <svg viewBox={`0 0 ${timelineData.length * 40} 70`} className="timeline-svg">
+                            {(() => {
+                              const maxAbs = Math.max(
+                                ...timelineData.map(d => Math.abs(d.avgSentiment)),
+                                0.01
+                              )
+                              const midY = 35
+                              return (
+                                <>
+                                  {/* Zero baseline */}
+                                  <line
+                                    x1="0" y1={midY}
+                                    x2={timelineData.length * 40} y2={midY}
+                                    stroke="#2d3748" strokeWidth="1" strokeDasharray="3,3"
+                                  />
+                                  {/* Sentiment line */}
+                                  <polyline
+                                    points={timelineData.map((d, i) => {
+                                      const x = i * 40 + 20
+                                      const y = midY - (d.avgSentiment / maxAbs) * 30
+                                      return `${x},${y}`
+                                    }).join(' ')}
+                                    fill="none"
+                                    stroke="#94a3b8"
+                                    strokeWidth="2"
+                                    strokeLinejoin="round"
+                                  />
+                                  {/* Data points — green if positive, red if negative */}
+                                  {timelineData.map((d, i) => {
+                                    const x = i * 40 + 20
+                                    const y = midY - (d.avgSentiment / maxAbs) * 30
+                                    const color = d.avgSentiment > 0.01 ? '#22c55e'
+                                      : d.avgSentiment < -0.01 ? '#ef4444' : '#94a3b8'
+                                    return <circle key={i} cx={x} cy={y} r="4" fill={color} />
+                                  })}
+                                </>
+                              )
+                            })()}
+                          </svg>
+                          <div className="timeline-legend">
+                            <span className="tl-pos">● Positive</span>
+                            <span className="tl-neu">● Neutral</span>
+                            <span className="tl-neg">● Negative</span>
+                          </div>
+                          <div className="timeline-labels">
+                            {timelineData.map((d, i) => (
+                              <span key={i} className="timeline-label">
+                                {d.date.slice(5)}
+                              </span>
+                            ))}
+                          </div>
+                        </div>
+                      </div>
+                    )}
+                  </div>
+                )}
               </aside>
             )}
           </div>

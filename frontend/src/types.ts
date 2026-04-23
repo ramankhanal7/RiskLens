@@ -14,6 +14,7 @@ export interface SearchResult {
   snippet: string;
   date: string;
   source: string;
+  sentiment: number;
 }
 
 export interface DimensionInfo {
@@ -48,5 +49,11 @@ export interface RagResponse {
   query_info: QueryInfo;
   svd_info: SvdInfo;
   llm_summary: string;
+  relevant_tickers: RelevantTicker[];
   error?: string;
+}
+
+export interface RelevantTicker {
+  ticker: string;
+  reason: string;
 }

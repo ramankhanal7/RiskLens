@@ -94,7 +94,7 @@ def register_routes(app):
                     {
                         "score": r.score, "tickers": r.tickers, "title": r.title,
                         "url": r.url, "snippet": r.snippet, "date": r.date,
-                        "source": r.source,
+                        "source": r.source, "sentiment": r.sentiment,
                     }
                     for r in results_list
                 ],
@@ -113,5 +113,24 @@ def register_routes(app):
             return jsonify({"error": str(e)}), 500
 
     if USE_LLM:
-        from llm_routes import register_chat_route
+        from llm_routes import register_chat_route, identify_relevant_tickers
         register_chat_route(app)
+
+        @app.route("/api/ticker-context", methods=["POST"])
+        def ticker_context():
+            """Lightweight endpoint: given query + tickers, return LLM descriptions."""
+            data = request.get_json() or {}
+            query = (data.get("query") or "").strip()
+            tickers = data.get("tickers") or []
+            if not query or not tickers:
+                return jsonify([])
+            api_key = os.getenv("SPARK_API_KEY")
+            if not api_key:
+                return jsonify([])
+            try:
+                from infosci_spark_client import LLMClient
+                client = LLMClient(api_key=api_key)
+                fake_results = [{"tickers": tickers}]
+                return jsonify(identify_relevant_tickers(client, query, fake_results))
+            except Exception:
+                return jsonify([{"ticker": t, "reason": ""} for t in tickers[:8]])
