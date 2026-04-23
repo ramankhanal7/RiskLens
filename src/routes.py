@@ -66,6 +66,43 @@ def register_routes(app):
         except Exception as e:
             return jsonify({"error": str(e)}), 500
 
+    @app.route("/api/quote")
+    def quote():
+        ticker = request.args.get("ticker", "").strip().upper()
+        if not ticker:
+            return jsonify({"error": "ticker required"}), 400
+        try:
+            import finnhub
+            from financial_data import finnhub_api_key
+            client = finnhub.Client(api_key=finnhub_api_key)
+            q = client.quote(ticker)
+            return jsonify({
+                "ticker": ticker,
+                "price": q.get("c", 0),
+                "change": round(q.get("d", 0) or 0, 2),
+                "changePct": round(q.get("dp", 0) or 0, 2),
+                "high": q.get("h", 0),
+                "low": q.get("l", 0),
+                "open": q.get("o", 0),
+                "prevClose": q.get("pc", 0),
+            })
+        except Exception as e:
+            return jsonify({"error": str(e)}), 500
+
+    @app.route("/api/recommendation")
+    def recommendation():
+        ticker = request.args.get("ticker", "").strip().upper()
+        if not ticker:
+            return jsonify({"error": "ticker required"}), 400
+        try:
+            import finnhub
+            from financial_data import finnhub_api_key
+            client = finnhub.Client(api_key=finnhub_api_key)
+            recs = client.recommendation_trends(ticker)
+            return jsonify(recs[:4] if recs else [])
+        except Exception as e:
+            return jsonify({"error": str(e)}), 500
+
     @app.route("/api/validate-ticker")
     def validate_ticker():
         ticker = request.args.get("ticker", "").strip().upper()
@@ -134,3 +171,50 @@ def register_routes(app):
                 return jsonify(identify_relevant_tickers(client, query, fake_results))
             except Exception:
                 return jsonify([{"ticker": t, "reason": ""} for t in tickers[:8]])
+
+        @app.route("/api/portfolio-briefing", methods=["POST"])
+        def portfolio_briefing():
+            """Generate an AI briefing for the user's portfolio."""
+            data = request.get_json() or {}
+            holdings = data.get("holdings") or []
+            if not holdings:
+                return jsonify({"briefing": "No holdings to analyze."})
+            api_key = os.getenv("SPARK_API_KEY")
+            if not api_key:
+                return jsonify({"error": "SPARK_API_KEY not set"}), 500
+            try:
+                from infosci_spark_client import LLMClient
+                client = LLMClient(api_key=api_key)
+                holdings_text = "\n".join(
+                    f"- {h['ticker']}"
+                    + (f" ({h.get('name', '')})" if h.get("name") else "")
+                    + f": sentiment={h.get('score', 'N/A')}"
+                    + (f", price=${h.get('price', 'N/A')}" if h.get("price") else "")
+                    + (f", day change={h.get('changePct', 'N/A')}%" if h.get("changePct") is not None else "")
+                    for h in holdings
+                )
+                messages = [
+                    {
+                        "role": "system",
+                        "content": (
+                            "You are a concise portfolio risk analyst. Given a user's "
+                            "stock holdings with sentiment scores and price data, produce "
+                            "a brief portfolio briefing (3-4 paragraphs max). Cover:\n"
+                            "- Overall portfolio risk posture\n"
+                            "- Key concerns or opportunities\n"
+                            "- Any concentration risks\n"
+                            "- A brief actionable takeaway, but no investment advice or forward-looking statements.\n"
+                            "Use **bold** for tickers and key terms. Be specific."
+                        ),
+                    },
+                    {
+                        "role": "user",
+                        "content": f"My current portfolio:\n{holdings_text}",
+                    },
+                ]
+                resp = client.chat(messages)
+                briefing = (resp.get("content") or "Unable to generate briefing.").strip()
+                return jsonify({"briefing": briefing})
+            except Exception as e:
+                return jsonify({"error": str(e)}), 500
+

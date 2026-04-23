@@ -3,6 +3,7 @@ import './App.css'
 import {
   WatchlistItem, SearchResult, DimensionInfo, QueryInfo,
   SvdInfo, SearchApiResponse, RagResponse, RelevantTicker,
+  StockQuote, RecommendationTrend,
 } from './types'
 
 const STORAGE_KEY = 'risklens-watchlist'
@@ -17,8 +18,8 @@ function renderMarkdown(md: string): string {
 
       // Heading lines
       if (block.startsWith('### ')) return `<h4>${block.slice(4)}</h4>`
-      if (block.startsWith('## '))  return `<h3>${block.slice(3)}</h3>`
-      if (block.startsWith('# '))   return `<h3>${block.slice(2)}</h3>`
+      if (block.startsWith('## ')) return `<h3>${block.slice(3)}</h3>`
+      if (block.startsWith('# ')) return `<h3>${block.slice(2)}</h3>`
 
       // Bullet list block
       const lines = block.split('\n')
@@ -128,14 +129,13 @@ function App(): JSX.Element {
   const [lastSearchedQuery, setLastSearchedQuery] = useState('')
   const [retrievalMode, setRetrievalMode] = useState<RetrievalMode>('hybrid')
   const [sourceFilter, setSourceFilter] = useState<SourceFilter>('')
-  const [showScoringInfo, setShowScoringInfo] = useState(false)
 
   // SVD explainability state
   const [queryInfo, setQueryInfo] = useState<QueryInfo | null>(null)
   const [svdInfo, setSvdInfo] = useState<SvdInfo | null>(null)
 
   // RAG / AI state
-  const [aiMode, setAiMode] = useState(false)
+  const [aiMode, setAiMode] = useState(true)
   const [ragLoading, setRagLoading] = useState(false)
   const [improvedQuery, setImprovedQuery] = useState('')
   const [llmSummary, setLlmSummary] = useState('')
@@ -144,9 +144,18 @@ function App(): JSX.Element {
 
   // Insights sidebar collapse state
   const [showStocks, setShowStocks] = useState(true)
-  const [showTopics, setShowTopics] = useState(false)
+  const [showTopics, setShowTopics] = useState(true)
   const [showExposure, setShowExposure] = useState(true)
-  const [showTimeline, setShowTimeline] = useState(false)
+  const [showTimeline, setShowTimeline] = useState(true)
+
+  // Portfolio dashboard state
+  const [quotes, setQuotes] = useState<Record<string, StockQuote>>({})
+  const [selectedTicker, setSelectedTicker] = useState<string | null>(null)
+  const [recommendations, setRecommendations] = useState<RecommendationTrend[]>([])
+  const [recsLoading, setRecsLoading] = useState(false)
+
+  const [briefing, setBriefing] = useState('')
+  const [briefingLoading, setBriefingLoading] = useState(false)
 
   const tickerRef = useRef<HTMLInputElement>(null)
 
@@ -201,6 +210,8 @@ function App(): JSX.Element {
             : w
         )
       )
+      fetchQuote(t)
+      if (!selectedTicker) selectHolding(t)
     } catch (e) {
       const msg = e instanceof Error ? e.message : 'Failed to fetch sentiment'
       setWatchlist(prev =>
@@ -230,7 +241,69 @@ function App(): JSX.Element {
     )
     setWatchlist(updated)
     setRefreshing(false)
+    // Also refresh quotes
+    fetchAllQuotes(updated.map(w => w.ticker))
   }
+
+  /* ── Portfolio dashboard helpers ────────────────────────────────────────── */
+
+  const fetchQuote = async (ticker: string) => {
+    try {
+      const res = await fetch(`/api/quote?ticker=${encodeURIComponent(ticker)}`)
+      const data: StockQuote = await res.json()
+      if (data.price !== undefined) {
+        setQuotes(prev => ({ ...prev, [ticker]: data }))
+      }
+    } catch { /* ignore */ }
+  }
+
+  const fetchAllQuotes = (tickers: string[]) => {
+    tickers.forEach(t => fetchQuote(t))
+  }
+
+  const selectHolding = async (ticker: string) => {
+    setSelectedTicker(ticker)
+    // Fetch recommendations
+    setRecsLoading(true)
+    try {
+      const res = await fetch(`/api/recommendation?ticker=${encodeURIComponent(ticker)}`)
+      const data: RecommendationTrend[] = await res.json()
+      setRecommendations(Array.isArray(data) ? data : [])
+    } catch { setRecommendations([]) }
+    setRecsLoading(false)
+
+  }
+
+  const generateBriefing = async () => {
+    setBriefingLoading(true)
+    try {
+      const holdings = watchlist.map(w => ({
+        ticker: w.ticker,
+        name: w.name,
+        score: w.score,
+        price: quotes[w.ticker]?.price,
+        changePct: quotes[w.ticker]?.changePct,
+      }))
+      const res = await fetch('/api/portfolio-briefing', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ holdings }),
+      })
+      const data = await res.json()
+      setBriefing(data.briefing || data.error || 'Failed to generate briefing.')
+    } catch {
+      setBriefing('Failed to generate briefing.')
+    }
+    setBriefingLoading(false)
+  }
+
+  // Auto-select first holding when switching to portfolio tab
+  useEffect(() => {
+    if (activeTab === 'portfolio' && watchlist.length > 0 && !selectedTicker) {
+      selectHolding(watchlist[0].ticker)
+      fetchAllQuotes(watchlist.map(w => w.ticker))
+    }
+  }, [activeTab]) // eslint-disable-line react-hooks/exhaustive-deps
 
   /* ── Standard IR search ─────────────────────────────────────────────────── */
   const handleQuery = async () => {
@@ -262,7 +335,7 @@ function App(): JSX.Element {
           body: JSON.stringify({ query: q, tickers }),
         }).then(r => r.json()).then(d => {
           if (Array.isArray(d) && d.length > 0) setRelevantTickers(d)
-        }).catch(() => {})
+        }).catch(() => { })
       }
     } catch (e: unknown) {
       setQueryError(e instanceof Error ? e.message : 'Search failed')
@@ -575,9 +648,84 @@ function App(): JSX.Element {
             </section>
 
             {/* ── Insights Sidebar ──────────────────────────────────────────── */}
-            {hasSearched && searchResults.length > 0 && (
-              <aside className="insights-panel">
-                <h3 className="insights-title">Insights</h3>
+            <aside className="insights-panel">
+              <h3 className="insights-title">Insights</h3>
+
+              {!(hasSearched && searchResults.length > 0) && (
+                <div className="insights-empty">
+                  <span className="insights-empty-icon">◇</span>
+                  <p>Run a search to see related stocks, topic analysis, ticker exposure, and sentiment trends.</p>
+                </div>
+              )}
+
+              {hasSearched && searchResults.length > 0 && (<>
+                {/* ── Sentiment Timeline ──────────────────────────────────── */}
+                {timelineData.length > 1 && (
+                  <div className="insight-section">
+                    <button className="insight-toggle" onClick={() => setShowTimeline(v => !v)}>
+                      <span>Sentiment Timeline</span>
+                      <span className="insight-chevron">{showTimeline ? '▾' : '▸'}</span>
+                    </button>
+                    {showTimeline && (
+                      <div className="insight-body">
+                        <p className="insight-description">Average document sentiment over time (positive ↑ / negative ↓)</p>
+                        <div className="timeline-chart">
+                          <svg viewBox={`0 0 ${timelineData.length * 40} 70`} className="timeline-svg">
+                            {(() => {
+                              const maxAbs = Math.max(
+                                ...timelineData.map(d => Math.abs(d.avgSentiment)),
+                                0.01
+                              )
+                              const midY = 35
+                              return (
+                                <>
+                                  {/* Zero baseline */}
+                                  <line
+                                    x1="0" y1={midY}
+                                    x2={timelineData.length * 40} y2={midY}
+                                    stroke="#2d3748" strokeWidth="1" strokeDasharray="3,3"
+                                  />
+                                  {/* Sentiment line */}
+                                  <polyline
+                                    points={timelineData.map((d, i) => {
+                                      const x = i * 40 + 20
+                                      const y = midY - (d.avgSentiment / maxAbs) * 30
+                                      return `${x},${y}`
+                                    }).join(' ')}
+                                    fill="none"
+                                    stroke="#94a3b8"
+                                    strokeWidth="2"
+                                    strokeLinejoin="round"
+                                  />
+                                  {/* Data points — green if positive, red if negative */}
+                                  {timelineData.map((d, i) => {
+                                    const x = i * 40 + 20
+                                    const y = midY - (d.avgSentiment / maxAbs) * 30
+                                    const color = d.avgSentiment > 0.01 ? '#22c55e'
+                                      : d.avgSentiment < -0.01 ? '#ef4444' : '#94a3b8'
+                                    return <circle key={i} cx={x} cy={y} r="4" fill={color} />
+                                  })}
+                                </>
+                              )
+                            })()}
+                          </svg>
+                          <div className="timeline-legend">
+                            <span className="tl-pos">● Positive</span>
+                            <span className="tl-neu">● Neutral</span>
+                            <span className="tl-neg">● Negative</span>
+                          </div>
+                          <div className="timeline-labels">
+                            {timelineData.map((d, i) => (
+                              <span key={i} className="timeline-label">
+                                {d.date.slice(5)}
+                              </span>
+                            ))}
+                          </div>
+                        </div>
+                      </div>
+                    )}
+                  </div>
+                )}
 
                 {/* ── Related Stocks ──────────────────────────────────────── */}
                 {displayTickers.length > 0 && (
@@ -663,187 +811,258 @@ function App(): JSX.Element {
                   </div>
                 )}
 
-                {/* ── Sentiment Timeline ──────────────────────────────────── */}
-                {timelineData.length > 1 && (
-                  <div className="insight-section">
-                    <button className="insight-toggle" onClick={() => setShowTimeline(v => !v)}>
-                      <span>Sentiment Timeline</span>
-                      <span className="insight-chevron">{showTimeline ? '▾' : '▸'}</span>
-                    </button>
-                    {showTimeline && (
-                      <div className="insight-body">
-                        <p className="insight-description">Average document sentiment over time (positive ↑ / negative ↓)</p>
-                        <div className="timeline-chart">
-                          <svg viewBox={`0 0 ${timelineData.length * 40} 70`} className="timeline-svg">
-                            {(() => {
-                              const maxAbs = Math.max(
-                                ...timelineData.map(d => Math.abs(d.avgSentiment)),
-                                0.01
-                              )
-                              const midY = 35
-                              return (
-                                <>
-                                  {/* Zero baseline */}
-                                  <line
-                                    x1="0" y1={midY}
-                                    x2={timelineData.length * 40} y2={midY}
-                                    stroke="#2d3748" strokeWidth="1" strokeDasharray="3,3"
-                                  />
-                                  {/* Sentiment line */}
-                                  <polyline
-                                    points={timelineData.map((d, i) => {
-                                      const x = i * 40 + 20
-                                      const y = midY - (d.avgSentiment / maxAbs) * 30
-                                      return `${x},${y}`
-                                    }).join(' ')}
-                                    fill="none"
-                                    stroke="#94a3b8"
-                                    strokeWidth="2"
-                                    strokeLinejoin="round"
-                                  />
-                                  {/* Data points — green if positive, red if negative */}
-                                  {timelineData.map((d, i) => {
-                                    const x = i * 40 + 20
-                                    const y = midY - (d.avgSentiment / maxAbs) * 30
-                                    const color = d.avgSentiment > 0.01 ? '#22c55e'
-                                      : d.avgSentiment < -0.01 ? '#ef4444' : '#94a3b8'
-                                    return <circle key={i} cx={x} cy={y} r="4" fill={color} />
-                                  })}
-                                </>
-                              )
-                            })()}
-                          </svg>
-                          <div className="timeline-legend">
-                            <span className="tl-pos">● Positive</span>
-                            <span className="tl-neu">● Neutral</span>
-                            <span className="tl-neg">● Negative</span>
-                          </div>
-                          <div className="timeline-labels">
-                            {timelineData.map((d, i) => (
-                              <span key={i} className="timeline-label">
-                                {d.date.slice(5)}
-                              </span>
-                            ))}
-                          </div>
-                        </div>
-                      </div>
-                    )}
-                  </div>
-                )}
-              </aside>
-            )}
+              </>)}
+            </aside>
           </div>
         )}
 
-        {/* ── Portfolio Tab ─────────────────────────────────────────────────── */}
-        {activeTab === 'portfolio' && (
-          <section className="panel watchlist-panel">
-            <div className="panel-header-row">
-              <h2 className="panel-title">Portfolio Monitor</h2>
-              <div className="panel-actions">
-                <select
-                  className="sort-select"
-                  value={sortMode}
-                  onChange={e => setSortMode(e.target.value as SortMode)}
-                >
-                  <option value="insertion">Sort: Added</option>
-                  <option value="score">Sort: Score</option>
-                </select>
-                <button
-                  className="btn-refresh"
-                  onClick={refreshAll}
-                  disabled={refreshing || watchlist.length === 0}
-                  title="Refresh all scores"
-                >
-                  {refreshing ? '⟳' : '↻'}
-                </button>
-              </div>
-            </div>
-            <p className="panel-subtitle">
-              Real-time sentiment from live financial news (last 30 days)
-            </p>
-
-            <div className="add-row">
-              <input
-                ref={tickerRef}
-                className="ticker-input"
-                placeholder="Ticker symbol, e.g. AAPL"
-                value={tickerInput}
-                onChange={e => {
-                  setTickerInput(e.target.value.toUpperCase())
-                  setTickerError('')
-                }}
-                onKeyDown={e => e.key === 'Enter' && addTicker()}
-                maxLength={10}
-                disabled={addingTicker}
-              />
-              <button
-                className="btn-primary"
-                onClick={() => addTicker()}
-                disabled={addingTicker}
-              >
-                {addingTicker ? '…' : 'Add'}
-              </button>
-            </div>
-            {tickerError && <p className="field-error">{tickerError}</p>}
-
-            <ul className="watchlist-list">
-              {watchlist.length === 0 && (
-                <li className="empty-state">
-                  No securities added yet. Type a ticker above to get started.
-                </li>
-              )}
-              {displayWatchlist.map(item => (
-                <li key={item.ticker} className="watchlist-item">
-                  <div className="item-left">
-                    <span className="item-ticker">{item.ticker}</span>
-                    {item.name && (
-                      <span className="item-name">{item.name}</span>
-                    )}
-                    {item.score !== null && (
-                      <span className={`item-score score-${item.status}`}>
-                        {item.score >= 0 ? '+' : ''}{item.score.toFixed(2)}
-                      </span>
-                    )}
-                  </div>
-                  <div className="item-right">
-                    <StatusBadge status={item.status} />
-                    {item.status === 'error' && item.error && (
-                      <span className="item-error-detail" title={item.error}>!</span>
-                    )}
-                    <button
-                      className="btn-remove"
-                      onClick={() => removeTicker(item.ticker)}
-                      aria-label={`Remove ${item.ticker}`}
-                    >
-                      ✕
+        {/* ── Portfolio Dashboard ──────────────────────────────────────────── */}
+        {activeTab === 'portfolio' && (() => {
+          const scored = watchlist.filter(w => w.score !== null)
+          const avgSent = scored.length > 0
+            ? scored.reduce((s, w) => s + (w.score ?? 0), 0) / scored.length : 0
+          const mostAtRisk = scored.length > 0
+            ? scored.reduce((a, b) => ((a.score ?? 0) < (b.score ?? 0) ? a : b)) : null
+          const bestMom = scored.length > 0
+            ? scored.reduce((a, b) => ((a.score ?? 0) > (b.score ?? 0) ? a : b)) : null
+          const selItem = watchlist.find(w => w.ticker === selectedTicker) || null
+          const selQuote = selectedTicker ? quotes[selectedTicker] : null
+          return (
+            <div className="dash">
+              {/* ── Header ─────────────────────────────────────────────────── */}
+              <div className="dash-header">
+                <div>
+                  <h2 className="dash-title">Portfolio Monitoring Dashboard</h2>
+                  <p className="dash-subtitle">Real-time sentiment &amp; risk overview from live financial news</p>
+                </div>
+                <div className="dash-actions">
+                  <div className="dash-add-row">
+                    <input
+                      ref={tickerRef}
+                      className="ticker-input"
+                      placeholder="Add ticker…"
+                      value={tickerInput}
+                      onChange={e => { setTickerInput(e.target.value.toUpperCase()); setTickerError('') }}
+                      onKeyDown={e => e.key === 'Enter' && addTicker()}
+                      maxLength={10}
+                      disabled={addingTicker}
+                    />
+                    <button className="btn-primary btn-sm" onClick={() => addTicker()} disabled={addingTicker}>
+                      {addingTicker ? '…' : '+ Add'}
                     </button>
                   </div>
-                </li>
-              ))}
-            </ul>
+                  <select
+                    className="sort-select"
+                    value={sortMode}
+                    onChange={e => setSortMode(e.target.value as SortMode)}
+                  >
+                    <option value="insertion">Sort: Added</option>
+                    <option value="score">Sort: Score</option>
+                  </select>
+                  <button
+                    className="btn-secondary btn-sm"
+                    onClick={refreshAll}
+                    disabled={refreshing || watchlist.length === 0}
+                  >
+                    {refreshing ? '⟳ Refreshing…' : '↻ Refresh All'}
+                  </button>
+                </div>
+              </div>
+              {tickerError && <p className="field-error" style={{ marginTop: -8 }}>{tickerError}</p>}
 
-            <div className="legend">
-              <span className="legend-item"><span className="dot dot-safe" />Safe (&gt;+0.5)</span>
-              <span className="legend-item"><span className="dot dot-neutral" />Neutral</span>
-              <span className="legend-item"><span className="dot dot-caution" />Caution (&lt;-0.5)</span>
-              <button
-                className="info-toggle"
-                onClick={() => setShowScoringInfo(s => !s)}
-                aria-label="Scoring info"
-              >
-                &#9432;
-              </button>
+              {/* ── Summary Cards ─────────────────────────────────────────── */}
+              <div className="dash-cards">
+                <div className="dash-card">
+                  <span className="dash-card-label">Holdings</span>
+                  <span className="dash-card-value">{watchlist.length}</span>
+                </div>
+                <div className="dash-card">
+                  <span className="dash-card-label">Avg Sentiment</span>
+                  <span className={`dash-card-value ${avgSent > 0.3 ? 'val-pos' : avgSent < -0.3 ? 'val-neg' : 'val-neu'}`}>
+                    {avgSent >= 0 ? '+' : ''}{avgSent.toFixed(2)}
+                  </span>
+                </div>
+                <div className="dash-card">
+                  <span className="dash-card-label">Most At Risk</span>
+                  <span className="dash-card-value val-neg">{mostAtRisk?.ticker ?? '—'}</span>
+                  {mostAtRisk && <span className="dash-card-sub">{mostAtRisk.score?.toFixed(2)}</span>}
+                </div>
+                <div className="dash-card">
+                  <span className="dash-card-label">Best Momentum</span>
+                  <span className="dash-card-value val-pos">{bestMom?.ticker ?? '—'}</span>
+                  {bestMom && <span className="dash-card-sub">+{bestMom.score?.toFixed(2)}</span>}
+                </div>
+              </div>
+
+              {/* ── AI Portfolio Briefing ─────────────────────────────────── */}
+              <div className="dash-briefing">
+                <div className="dash-briefing-header">
+                  <div>
+                    <span className="dash-briefing-icon">✦</span>
+                    <span className="dash-briefing-title">AI Portfolio Briefing</span>
+                    <span className="ai-badge">AI</span>
+                  </div>
+                  <button
+                    className="btn-primary btn-sm"
+                    onClick={generateBriefing}
+                    disabled={briefingLoading || watchlist.length === 0}
+                  >
+                    {briefingLoading ? '⟳ Generating…' : '✦ Generate Briefing'}
+                  </button>
+                </div>
+                <div className="dash-briefing-body">
+                  {briefing
+                    ? <div dangerouslySetInnerHTML={{ __html: renderMarkdown(briefing) }} />
+                    : <p className="dash-briefing-placeholder">
+                      Press <strong>"Generate Briefing"</strong> to receive an AI-powered analysis of your portfolio's risk posture,
+                      key concerns, and actionable recommendations.
+                    </p>
+                  }
+                </div>
+              </div>
+
+              {/* ── Holdings Table + Detail Panel ────────────────────────── */}
+              {watchlist.length === 0 ? (
+                <div className="dash-empty">
+                  <p>No holdings yet. Add a ticker above to get started.</p>
+                </div>
+              ) : (
+                <div className="dash-main">
+                  {/* Left: Holdings Table */}
+                  <div className="dash-table-wrap">
+                    <table className="dash-table">
+                      <thead>
+                        <tr>
+                          <th>Ticker</th>
+                          <th>Price</th>
+                          <th>Day</th>
+                          <th>Sentiment</th>
+                          <th>Risk</th>
+                          <th></th>
+                        </tr>
+                      </thead>
+                      <tbody>
+                        {displayWatchlist.map(item => {
+                          const q = quotes[item.ticker]
+                          return (
+                            <tr
+                              key={item.ticker}
+                              className={`dash-row ${selectedTicker === item.ticker ? 'dash-row-selected' : ''}`}
+                              onClick={() => selectHolding(item.ticker)}
+                            >
+                              <td>
+                                <div className="dash-ticker-cell">
+                                  <span className="dash-ticker">{item.ticker}</span>
+                                  {item.name && <span className="dash-name">{item.name}</span>}
+                                </div>
+                              </td>
+                              <td className="dash-mono">{q ? `$${q.price.toFixed(2)}` : '—'}</td>
+                              <td>
+                                {q ? (
+                                  <span className={`dash-badge ${q.changePct >= 0 ? 'badge-green' : 'badge-red'}`}>
+                                    {q.changePct >= 0 ? '+' : ''}{q.changePct.toFixed(2)}%
+                                  </span>
+                                ) : '—'}
+                              </td>
+                              <td>
+                                {item.score !== null ? (
+                                  <span className={`dash-badge ${item.score > 0.3 ? 'badge-green' : item.score < -0.3 ? 'badge-red' : 'badge-amber'}`}>
+                                    {item.score >= 0 ? '+' : ''}{item.score.toFixed(2)}
+                                  </span>
+                                ) : (
+                                  <span className="dash-badge badge-muted">{item.status === 'loading' ? '…' : '—'}</span>
+                                )}
+                              </td>
+                              <td><StatusBadge status={item.status} /></td>
+                              <td>
+                                <button className="btn-remove" onClick={e => { e.stopPropagation(); removeTicker(item.ticker) }}>✕</button>
+                              </td>
+                            </tr>
+                          )
+                        })}
+                      </tbody>
+                    </table>
+                  </div>
+
+                  {/* Right: Selected Holding Detail */}
+                  {selItem && (
+                    <div className="dash-detail">
+                      <div className="dash-detail-header">
+                        <div>
+                          <span className="dash-detail-ticker">{selItem.ticker}</span>
+                          {selItem.name && <span className="dash-detail-name">{selItem.name}</span>}
+                        </div>
+                        <StatusBadge status={selItem.status} />
+                      </div>
+
+                      {/* Stat cards */}
+                      <div className="dash-stats">
+                        <div className="dash-stat">
+                          <span className="dash-stat-label">Current Price</span>
+                          <span className="dash-stat-value">{selQuote ? `$${selQuote.price.toFixed(2)}` : '—'}</span>
+                        </div>
+                        <div className="dash-stat">
+                          <span className="dash-stat-label">Daily Move</span>
+                          <span className={`dash-stat-value ${selQuote && selQuote.changePct >= 0 ? 'val-pos' : 'val-neg'}`}>
+                            {selQuote ? `${selQuote.changePct >= 0 ? '+' : ''}${selQuote.changePct.toFixed(2)}%` : '—'}
+                          </span>
+                        </div>
+                      </div>
+
+                      {/* Analyst Recommendations */}
+                      <div className="dash-section">
+                        <h4 className="dash-section-title">Analyst Recommendations</h4>
+                        {recsLoading ? (
+                          <div className="dash-loading"><span className="spinner" /> Loading…</div>
+                        ) : recommendations.length > 0 ? (
+                          <div className="recs-chart">
+                            {recommendations.slice().reverse().map((r, i) => {
+                              const total = r.strongBuy + r.buy + r.hold + r.sell + r.strongSell
+                              if (total === 0) return null
+                              return (
+                                <div key={i} className="recs-row">
+                                  <span className="recs-period">{r.period.slice(0, 7)}</span>
+                                  <div className="recs-bar">
+                                    <div className="recs-seg recs-strong-buy" style={{ width: `${(r.strongBuy / total) * 100}%` }} title={`Strong Buy: ${r.strongBuy}`} />
+                                    <div className="recs-seg recs-buy" style={{ width: `${(r.buy / total) * 100}%` }} title={`Buy: ${r.buy}`} />
+                                    <div className="recs-seg recs-hold" style={{ width: `${(r.hold / total) * 100}%` }} title={`Hold: ${r.hold}`} />
+                                    <div className="recs-seg recs-sell" style={{ width: `${(r.sell / total) * 100}%` }} title={`Sell: ${r.sell}`} />
+                                    <div className="recs-seg recs-strong-sell" style={{ width: `${(r.strongSell / total) * 100}%` }} title={`Strong Sell: ${r.strongSell}`} />
+                                  </div>
+                                </div>
+                              )
+                            })}
+                            <div className="recs-legend">
+                              <span><span className="recs-dot recs-strong-buy" />Strong Buy</span>
+                              <span><span className="recs-dot recs-buy" />Buy</span>
+                              <span><span className="recs-dot recs-hold" />Hold</span>
+                              <span><span className="recs-dot recs-sell" />Sell</span>
+                            </div>
+                          </div>
+                        ) : (
+                          <p className="dash-muted">No recommendation data available.</p>
+                        )}
+                      </div>
+
+
+
+                      <button
+                        className="btn-primary btn-full"
+                        onClick={() => {
+                          setQueryInput(selItem.ticker)
+                          setActiveTab('research')
+                        }}
+                      >
+                        Open Full Research View →
+                      </button>
+                    </div>
+                  )}
+                </div>
+              )}
+
             </div>
-            {showScoringInfo && (
-              <p className="scoring-info">
-                Scores are computed from Finnhub company news over the past 30 days
-                using a sentiment lexicon. Positive/negative word counts produce a
-                score in [-5, +5]. Safe &gt; +0.5, Caution &lt; -0.5, otherwise Neutral.
-              </p>
-            )}
-          </section>
-        )}
+          )
+        })()}
       </main>
     </div>
   )

@@ -57,3 +57,24 @@ export interface RelevantTicker {
   ticker: string;
   reason: string;
 }
+
+export interface StockQuote {
+  ticker: string;
+  price: number;
+  change: number;
+  changePct: number;
+  high: number;
+  low: number;
+  open: number;
+  prevClose: number;
+}
+
+export interface RecommendationTrend {
+  period: string;
+  buy: number;
+  hold: number;
+  sell: number;
+  strongBuy: number;
+  strongSell: number;
+  symbol: string;
+}
