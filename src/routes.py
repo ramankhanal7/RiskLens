@@ -5,6 +5,8 @@ To enable AI chat, set USE_LLM = True below. See llm_routes.py for AI code.
 """
 import json
 import os
+
+from collections import Counter
 from dataclasses import asdict
 from datetime import date, timedelta
 from flask import send_from_directory, request, jsonify
@@ -100,6 +102,98 @@ def register_routes(app):
             client = finnhub.Client(api_key=finnhub_api_key)
             recs = client.recommendation_trends(ticker)
             return jsonify(recs[:4] if recs else [])
+        except Exception as e:
+            return jsonify({"error": str(e)}), 500
+
+
+    @app.route("/api/explore")
+    def explore():
+        """Trending tickers, themes, and noteworthy articles from the IR corpus."""
+        try:
+            from query import _ensure_indices, _compute_sentiment, _generate_topic_label
+            from lsa import get_top_terms_per_component
+            tfidf_idx, lsa_idx = _ensure_indices()
+            corpus = lsa_idx.docs
+
+            # --- Trending Tickers: top by mention count + avg sentiment ---
+            ticker_counter: Counter = Counter()
+            ticker_sentiments: dict[str, list[float]] = {}
+            for doc in corpus:
+                text = doc.get("raw_text", "")
+                sent = _compute_sentiment(text)
+                for t in doc.get("ticker", []):
+                    ticker_counter[t] += 1
+                    ticker_sentiments.setdefault(t, []).append(sent)
+
+            trending = []
+            for tkr, count in ticker_counter.most_common(12):
+                sents = ticker_sentiments[tkr]
+                avg = sum(sents) / len(sents) if sents else 0.0
+                trending.append({
+                    "ticker": tkr,
+                    "mentions": count,
+                    "avgSentiment": round(avg, 4),
+                })
+
+            # --- Market Themes: top LSA components ---
+            # Filter noise terms that don't make meaningful topic labels
+            noise_terms = {
+                'png', 'jpg', 'gif', 'http', 'https', 'www', 'com', 'org',
+                'reuter', 'reuters', 'ap', 'afp', 'getty',
+                'said', 'say', 'also', 'would', 'could', 'one', 'two',
+                'new', 'year', 'time', 'day', 'week', 'month',
+                'mr', 'mrs', 'dr', 'inc', 'corp', 'ltd', 'llc',
+                'report', 'source', 'file', 'photo', 'image', 'video',
+            }
+            term_map = get_top_terms_per_component(lsa_idx.svd, lsa_idx.vectorizer, n_terms=12)
+            import numpy as np
+            component_importance = lsa_idx.svd.explained_variance_ratio_
+            top_comp_idx = np.argsort(component_importance)[::-1][:10]
+            themes = []
+            for idx in top_comp_idx:
+                raw_terms = term_map.get(int(idx), [])
+                # Filter out noise terms
+                clean_terms = [t for t in raw_terms if t.lower() not in noise_terms and len(t) > 2]
+                if len(clean_terms) < 3:
+                    continue  # skip components that are mostly noise
+                label = _generate_topic_label(clean_terms)
+                themes.append({
+                    "index": int(idx),
+                    "label": label,
+                    "top_terms": clean_terms[:8],
+                    "variance": round(float(component_importance[idx]) * 100, 2),
+                })
+                if len(themes) >= 6:
+                    break
+
+            # --- Noteworthy: articles with strongest sentiment (balanced) ---
+            scored_docs = []
+            for doc in corpus:
+                if doc.get("source") != "news":
+                    continue
+                text = doc.get("raw_text", "")
+                sent = _compute_sentiment(text)
+                headline = (doc.get("metadata") or {}).get("headline", text[:150])
+                scored_docs.append({
+                    "title": headline,
+                    "url": doc.get("url", ""),
+                    "date": doc.get("date", ""),
+                    "tickers": doc.get("ticker", []),
+                    "sentiment": round(sent, 4),
+                    "source": "news",
+                })
+            # Balanced mix: top 4 most positive + top 4 most negative
+            positive = sorted([d for d in scored_docs if d["sentiment"] > 0.01],
+                              key=lambda d: d["sentiment"], reverse=True)[:4]
+            negative = sorted([d for d in scored_docs if d["sentiment"] < -0.01],
+                              key=lambda d: d["sentiment"])[:4]
+            noteworthy = positive + negative
+
+            return jsonify({
+                "trending": trending,
+                "themes": themes,
+                "noteworthy": noteworthy,
+            })
         except Exception as e:
             return jsonify({"error": str(e)}), 500
 

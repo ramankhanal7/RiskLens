@@ -1990,3 +1990,543 @@ body {
     flex-direction: column;
   }
 }
+
+
+
+/* ══════════════════════════════════════════════════════════════════════════ */
+/* ── Feature 2: Explore Page ─────────────────────────────────────────── */
+/* ══════════════════════════════════════════════════════════════════════════ */
+
+.explore-page {
+  max-width: 1200px;
+  margin: 0 auto;
+}
+
+.explore-hero {
+  text-align: center;
+  padding: 32px 24px 24px;
+  background: linear-gradient(135deg, rgba(59, 130, 246, 0.06) 0%, rgba(129, 140, 248, 0.04) 100%);
+  border-radius: 16px;
+  border: 1px solid #1e2330;
+  margin-bottom: 28px;
+  position: relative;
+  overflow: hidden;
+}
+
+.explore-hero::before {
+  content: '';
+  position: absolute;
+  top: 0;
+  left: 0;
+  right: 0;
+  height: 2px;
+  background: linear-gradient(90deg, #3b82f6, #818cf8, #3b82f6);
+  background-size: 200% 100%;
+  animation: headerShimmer 4s linear infinite;
+}
+
+.explore-hero-title {
+  font-size: 24px;
+  font-weight: 800;
+  background: linear-gradient(135deg, #f1f5f9 0%, #94a3b8 100%);
+  -webkit-background-clip: text;
+  -webkit-text-fill-color: transparent;
+  background-clip: text;
+  margin-bottom: 6px;
+}
+
+.explore-hero-sub {
+  font-size: 13px;
+  color: #64748b;
+}
+
+.explore-grid {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 24px;
+}
+
+.explore-section {
+  background: #161b27;
+  border: 1px solid #1e2330;
+  border-radius: 12px;
+  padding: 20px;
+}
+
+.explore-section-full {
+  grid-column: 1 / -1;
+}
+
+.explore-section-title {
+  font-size: 16px;
+  font-weight: 700;
+  color: #e2e8f0;
+  margin-bottom: 4px;
+}
+
+.explore-section-sub {
+  font-size: 12px;
+  color: #4a5568;
+  margin-bottom: 16px;
+}
+
+/* Trending ticker cards */
+.trending-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(140px, 1fr));
+  gap: 10px;
+}
+
+.trending-card {
+  background: #0f1117;
+  border: 1px solid #1e2330;
+  border-radius: 8px;
+  padding: 12px;
+  transition: border-color 0.15s, transform 0.15s;
+}
+
+.trending-card:hover {
+  border-color: #2d3748;
+  transform: translateY(-1px);
+}
+
+.trending-card-top {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  margin-bottom: 8px;
+}
+
+.trending-ticker {
+  font-family: 'JetBrains Mono', 'Fira Code', monospace;
+  font-size: 14px;
+  font-weight: 700;
+  color: #f1f5f9;
+  letter-spacing: 0.04em;
+}
+
+.trending-sentiment {
+  font-size: 11px;
+  font-weight: 600;
+  font-variant-numeric: tabular-nums;
+}
+
+.sent-pos { color: #22c55e; }
+.sent-neg { color: #ef4444; }
+.sent-neu { color: #94a3b8; }
+
+.trending-bar-track {
+  height: 4px;
+  background: #1e2330;
+  border-radius: 2px;
+  margin-bottom: 8px;
+  overflow: hidden;
+}
+
+.trending-bar-fill {
+  height: 100%;
+  background: linear-gradient(90deg, #3b82f6, #60a5fa);
+  border-radius: 2px;
+  transition: width 0.4s ease;
+}
+
+.trending-card-bottom {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 4px;
+}
+
+.trending-mentions {
+  font-size: 11px;
+  color: #4a5568;
+}
+
+.trending-actions {
+  display: flex;
+  gap: 4px;
+}
+
+/* Market theme cards */
+.themes-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(160px, 1fr));
+  gap: 10px;
+}
+
+.explore-theme-card {
+  background: #0f1117;
+  border: 1px solid #1e2330;
+  border-radius: 8px;
+  padding: 12px;
+  cursor: pointer;
+  transition: border-color 0.15s, transform 0.15s;
+}
+
+.explore-theme-card:hover {
+  border-color: #3b82f6;
+  transform: translateY(-1px);
+}
+
+.explore-theme-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  margin-bottom: 8px;
+}
+
+.explore-theme-label {
+  font-size: 13px;
+  font-weight: 600;
+  color: #e2e8f0;
+}
+
+.explore-theme-var {
+  font-size: 10px;
+  font-weight: 600;
+  color: #64748b;
+  background: rgba(59, 130, 246, 0.1);
+  border: 1px solid rgba(59, 130, 246, 0.2);
+  padding: 1px 6px;
+  border-radius: 4px;
+}
+
+.explore-theme-keywords {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 4px;
+}
+
+/* Noteworthy cards */
+.noteworthy-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(280px, 1fr));
+  gap: 10px;
+}
+
+.noteworthy-card {
+  background: #0f1117;
+  border: 1px solid #1e2330;
+  border-radius: 8px;
+  padding: 14px;
+  transition: border-color 0.15s;
+}
+
+.noteworthy-card:hover {
+  border-color: #2d3748;
+}
+
+.noteworthy-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  margin-bottom: 8px;
+}
+
+.noteworthy-sentiment {
+  font-size: 11px;
+  font-weight: 700;
+}
+
+.noteworthy-date {
+  font-size: 11px;
+  color: #4a5568;
+  font-variant-numeric: tabular-nums;
+}
+
+.noteworthy-title {
+  font-size: 13px;
+  color: #cbd5e1;
+  line-height: 1.5;
+  margin-bottom: 8px;
+}
+
+.noteworthy-title a {
+  color: #93c5fd;
+  text-decoration: none;
+}
+
+.noteworthy-title a:hover {
+  color: #60a5fa;
+  text-decoration: underline;
+}
+
+.noteworthy-tickers {
+  display: flex;
+  gap: 4px;
+  flex-wrap: wrap;
+}
+
+/* ══════════════════════════════════════════════════════════════════════════ */
+/* ── Feature 3: Research Chat ────────────────────────────────────────── */
+/* ══════════════════════════════════════════════════════════════════════════ */
+
+.research-chat-section {
+  margin-top: 16px;
+}
+
+.btn-chat-toggle {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  width: 100%;
+  background: rgba(59, 130, 246, 0.06);
+  border: 1px solid rgba(59, 130, 246, 0.2);
+  border-radius: 10px;
+  padding: 14px 18px;
+  color: #93c5fd;
+  font-size: 14px;
+  font-weight: 600;
+  cursor: pointer;
+  transition: background 0.15s, border-color 0.15s;
+}
+
+.btn-chat-toggle:hover {
+  background: rgba(59, 130, 246, 0.1);
+  border-color: rgba(59, 130, 246, 0.35);
+}
+
+.chat-toggle-icon {
+  font-size: 18px;
+}
+
+.ai-badge {
+  font-size: 9px;
+  font-weight: 700;
+  color: #818cf8;
+  background: rgba(129, 140, 248, 0.12);
+  border: 1px solid rgba(129, 140, 248, 0.25);
+  padding: 2px 6px;
+  border-radius: 4px;
+  text-transform: uppercase;
+  letter-spacing: 0.06em;
+}
+
+.research-chat-panel {
+  background: #161b27;
+  border: 1px solid #1e2330;
+  border-radius: 12px;
+  overflow: hidden;
+  display: flex;
+  flex-direction: column;
+}
+
+.research-chat-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 12px 16px;
+  border-bottom: 1px solid #1e2330;
+  background: #12161f;
+}
+
+.research-chat-header > div {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.chat-header-icon {
+  font-size: 16px;
+  color: #818cf8;
+}
+
+.chat-header-title {
+  font-size: 14px;
+  font-weight: 600;
+  color: #e2e8f0;
+}
+
+.btn-chat-close {
+  background: none;
+  border: none;
+  color: #4a5568;
+  font-size: 14px;
+  cursor: pointer;
+  padding: 4px 8px;
+  border-radius: 4px;
+  transition: color 0.15s, background 0.15s;
+}
+
+.btn-chat-close:hover {
+  color: #f87171;
+  background: rgba(248, 113, 113, 0.1);
+}
+
+.research-chat-messages {
+  max-height: 360px;
+  overflow-y: auto;
+  padding: 16px;
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+  scrollbar-width: thin;
+  scrollbar-color: #2d3748 #12161f;
+}
+
+.research-chat-messages::-webkit-scrollbar {
+  width: 6px;
+}
+
+.research-chat-messages::-webkit-scrollbar-track {
+  background: #12161f;
+  border-radius: 3px;
+}
+
+.research-chat-messages::-webkit-scrollbar-thumb {
+  background: #2d3748;
+  border-radius: 3px;
+}
+
+.research-chat-messages::-webkit-scrollbar-thumb:hover {
+  background: #3b4a5f;
+}
+
+.chat-empty {
+  text-align: center;
+  padding: 16px 0;
+}
+
+.chat-empty p {
+  font-size: 13px;
+  color: #64748b;
+  margin-bottom: 12px;
+}
+
+.chat-suggestions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+  justify-content: center;
+}
+
+.chat-suggestion {
+  background: rgba(59, 130, 246, 0.08);
+  border: 1px solid rgba(59, 130, 246, 0.2);
+  border-radius: 20px;
+  padding: 6px 14px;
+  font-size: 12px;
+  color: #93c5fd;
+  cursor: pointer;
+  transition: background 0.15s, border-color 0.15s;
+}
+
+.chat-suggestion:hover {
+  background: rgba(59, 130, 246, 0.15);
+  border-color: rgba(59, 130, 246, 0.35);
+}
+
+.chat-msg {
+  display: flex;
+}
+
+.chat-msg-user {
+  justify-content: flex-end;
+}
+
+.chat-msg-user .chat-msg-content {
+  background: #3b82f6;
+  color: #fff;
+  border-radius: 12px 12px 4px 12px;
+  padding: 10px 14px;
+  font-size: 13px;
+  line-height: 1.5;
+  max-width: 80%;
+}
+
+.chat-msg-assistant .chat-msg-content {
+  background: #1e2330;
+  color: #e2e8f0;
+  border-radius: 12px 12px 12px 4px;
+  padding: 10px 14px;
+  font-size: 13px;
+  line-height: 1.5;
+  max-width: 85%;
+}
+
+.chat-msg-assistant .chat-msg-content p {
+  margin-bottom: 6px;
+}
+
+.chat-msg-assistant .chat-msg-content p:last-child {
+  margin-bottom: 0;
+}
+
+.chat-msg-assistant .chat-msg-content strong {
+  color: #f1f5f9;
+}
+
+.chat-msg-assistant .chat-msg-content .ai-cite {
+  color: #818cf8;
+  font-weight: 600;
+  font-size: 11px;
+}
+
+.chat-typing {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  padding: 10px 14px;
+  background: #1e2330;
+  border-radius: 12px 12px 12px 4px;
+}
+
+.typing-dot {
+  width: 6px;
+  height: 6px;
+  border-radius: 50%;
+  background: #4a5568;
+  animation: typingBounce 1.2s infinite;
+}
+
+.typing-dot:nth-child(2) { animation-delay: 0.2s; }
+.typing-dot:nth-child(3) { animation-delay: 0.4s; }
+
+@keyframes typingBounce {
+  0%, 60%, 100% { transform: translateY(0); opacity: 0.4; }
+  30% { transform: translateY(-4px); opacity: 1; }
+}
+
+.research-chat-input-bar {
+  display: flex;
+  gap: 8px;
+  padding: 12px 16px;
+  border-top: 1px solid #1e2330;
+  background: #12161f;
+}
+
+.chat-input {
+  flex: 1;
+  background: #0f1117;
+  border: 1px solid #2d3748;
+  border-radius: 8px;
+  padding: 10px 14px;
+  font-size: 13px;
+  color: #e2e8f0;
+  outline: none;
+  transition: border-color 0.15s;
+}
+
+.chat-input::placeholder {
+  color: #4a5568;
+}
+
+.chat-input:focus {
+  border-color: #3b82f6;
+}
+
+/* ── Responsive: Explore ─────────────────────────────────────────────── */
+@media (max-width: 768px) {
+  .explore-grid {
+    grid-template-columns: 1fr;
+  }
+
+  .trending-grid {
+    grid-template-columns: repeat(auto-fill, minmax(120px, 1fr));
+  }
+
+  .noteworthy-grid {
+    grid-template-columns: 1fr;
+  }
+}

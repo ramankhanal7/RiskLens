@@ -78,3 +78,36 @@ export interface RecommendationTrend {
   strongSell: number;
   symbol: string;
 }
+
+export interface TrendingTicker {
+  ticker: string;
+  mentions: number;
+  avgSentiment: number;
+}
+
+export interface ExploreTheme {
+  index: number;
+  label: string;
+  top_terms: string[];
+  variance: number;
+}
+
+export interface NoteworthyArticle {
+  title: string;
+  url: string;
+  date: string;
+  tickers: string[];
+  sentiment: number;
+  source: string;
+}
+
+export interface ExploreData {
+  trending: TrendingTicker[];
+  themes: ExploreTheme[];
+  noteworthy: NoteworthyArticle[];
+}
+
+export interface ChatMessage {
+  role: 'user' | 'assistant';
+  content: string;
+}

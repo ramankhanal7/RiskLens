@@ -1,9 +1,10 @@
-import { useState, useEffect, useRef } from 'react'
+import { useState, useEffect, useRef, useCallback } from 'react'
 import './App.css'
 import {
   WatchlistItem, SearchResult, DimensionInfo, QueryInfo,
   SvdInfo, SearchApiResponse, RagResponse, RelevantTicker,
   StockQuote, RecommendationTrend,
+  ExploreData, ChatMessage,
 } from './types'
 
 const STORAGE_KEY = 'risklens-watchlist'
@@ -46,7 +47,7 @@ function inlineFormat(text: string): string {
     .replace(/\[([\d,\s]+)\]/g, '<span class="ai-cite">[$1]</span>')  // citations
 }
 
-type AppTab = 'research' | 'portfolio'
+type AppTab = 'research' | 'explore' | 'portfolio'
 type RetrievalMode = 'hybrid' | 'tfidf' | 'lsa'
 type SourceFilter = '' | 'news' | 'reddit'
 type SortMode = 'insertion' | 'score'
@@ -156,6 +157,17 @@ function App(): JSX.Element {
 
   const [briefing, setBriefing] = useState('')
   const [briefingLoading, setBriefingLoading] = useState(false)
+
+  // Explore tab state
+  const [exploreData, setExploreData] = useState<ExploreData | null>(null)
+  const [exploreLoading, setExploreLoading] = useState(false)
+
+  // Research chat state
+  const [chatMessages, setChatMessages] = useState<ChatMessage[]>([])
+  const [chatInput, setChatInput] = useState('')
+  const [chatLoading, setChatLoading] = useState(false)
+  const [chatOpen, setChatOpen] = useState(false)
+  const chatMessagesRef = useRef<HTMLDivElement>(null)
 
   const tickerRef = useRef<HTMLInputElement>(null)
 
@@ -305,6 +317,56 @@ function App(): JSX.Element {
     }
   }, [activeTab]) // eslint-disable-line react-hooks/exhaustive-deps
 
+  // Auto-fetch explore data
+  const fetchExploreData = useCallback(async () => {
+    if (exploreData || exploreLoading) return
+    setExploreLoading(true)
+    try {
+      const res = await fetch('/api/explore')
+      const data: ExploreData = await res.json()
+      setExploreData(data)
+    } catch { /* ignore */ }
+    setExploreLoading(false)
+  }, [exploreData, exploreLoading])
+
+  useEffect(() => {
+    if (activeTab === 'explore') fetchExploreData()
+  }, [activeTab]) // eslint-disable-line react-hooks/exhaustive-deps
+
+  // Auto-scroll chat (scroll within container only, not the page)
+  useEffect(() => {
+    if (chatMessagesRef.current) {
+      chatMessagesRef.current.scrollTop = chatMessagesRef.current.scrollHeight
+    }
+  }, [chatMessages, chatLoading])
+
+  // Send chat message
+  const sendChatMessage = async () => {
+    const text = chatInput.trim()
+    if (!text || chatLoading) return
+    const newMsg: ChatMessage = { role: 'user', content: text }
+    const updated = [...chatMessages, newMsg]
+    setChatMessages(updated)
+    setChatInput('')
+    setChatLoading(true)
+    try {
+      const res = await fetch('/api/research-chat', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          messages: updated,
+          context: { results: searchResults, query: lastSearchedQuery },
+        }),
+      })
+      const data = await res.json()
+      if (data.error) throw new Error(data.error)
+      setChatMessages(prev => [...prev, { role: 'assistant', content: data.content }])
+    } catch (e) {
+      setChatMessages(prev => [...prev, { role: 'assistant', content: 'Sorry, I encountered an error. Please try again.' }])
+    }
+    setChatLoading(false)
+  }
+
   /* ── Standard IR search ─────────────────────────────────────────────────── */
   const handleQuery = async () => {
     const q = queryInput.trim()
@@ -317,6 +379,9 @@ function App(): JSX.Element {
     setImprovedQuery('')
     setLlmSummary('')
     setOriginalQuery('')
+    // Clear chat for new search context
+    setChatMessages([])
+    setChatOpen(false)
     try {
       let url = `/api/search?q=${encodeURIComponent(q)}&mode=${retrievalMode}`
       if (sourceFilter) url += `&source=${sourceFilter}`
@@ -356,6 +421,8 @@ function App(): JSX.Element {
     setQueryError('')
     setHasSearched(true)
     setLastSearchedQuery(q)
+    setChatMessages([])
+    setChatOpen(false)
     try {
       const res = await fetch('/api/rag', {
         method: 'POST',
@@ -470,6 +537,12 @@ function App(): JSX.Element {
           onClick={() => setActiveTab('research')}
         >
           Research
+        </button>
+        <button
+          className={`tab-btn ${activeTab === 'explore' ? 'tab-active' : ''}`}
+          onClick={() => setActiveTab('explore')}
+        >
+          Explore
         </button>
         <button
           className={`tab-btn ${activeTab === 'portfolio' ? 'tab-active' : ''}`}
@@ -600,7 +673,73 @@ function App(): JSX.Element {
                 </div>
               )}
 
-
+              {/* ── Research Chat ─────────────────────────────────────────────── */}
+              {!queryLoading && hasSearched && searchResults.length > 0 && (
+                <div className="research-chat-section">
+                  {!chatOpen ? (
+                    <button className="btn-chat-toggle" onClick={() => setChatOpen(true)}>
+                      <span className="chat-toggle-icon">💬</span> Ask Follow-up Questions
+                      <span className="ai-badge">AI</span>
+                    </button>
+                  ) : (
+                    <div className="research-chat-panel">
+                      <div className="research-chat-header">
+                        <div>
+                          <span className="chat-header-icon">✦</span>
+                          <span className="chat-header-title">Research Assistant</span>
+                          <span className="ai-badge">AI</span>
+                        </div>
+                        <button className="btn-chat-close" onClick={() => setChatOpen(false)}>✕</button>
+                      </div>
+                      <div className="research-chat-messages" ref={chatMessagesRef}>
+                        {chatMessages.length === 0 && (
+                          <div className="chat-empty">
+                            <p>Ask questions about the search results below. For example:</p>
+                            <div className="chat-suggestions">
+                              {['Which articles are most bearish?',
+                                'Summarize the Reddit sentiment',
+                                'What are the key risk factors?'].map(s => (
+                                <button key={s} className="chat-suggestion" onClick={() => { setChatInput(s) }}>{s}</button>
+                              ))}
+                            </div>
+                          </div>
+                        )}
+                        {chatMessages.map((msg, i) => (
+                          <div key={i} className={`chat-msg chat-msg-${msg.role}`}>
+                            {msg.role === 'assistant' ? (
+                              <div className="chat-msg-content"
+                                dangerouslySetInnerHTML={{ __html: renderMarkdown(msg.content) }} />
+                            ) : (
+                              <div className="chat-msg-content">{msg.content}</div>
+                            )}
+                          </div>
+                        ))}
+                        {chatLoading && (
+                          <div className="chat-msg chat-msg-assistant">
+                            <div className="chat-typing">
+                              <span className="typing-dot" /><span className="typing-dot" /><span className="typing-dot" />
+                            </div>
+                          </div>
+                        )}
+                      </div>
+                      <div className="research-chat-input-bar">
+                        <input
+                          className="chat-input"
+                          placeholder="Ask about these results…"
+                          value={chatInput}
+                          onChange={e => setChatInput(e.target.value)}
+                          onKeyDown={e => e.key === 'Enter' && sendChatMessage()}
+                          disabled={chatLoading}
+                        />
+                        <button className="btn-primary btn-sm" onClick={sendChatMessage}
+                          disabled={chatLoading || !chatInput.trim()}>
+                          Send
+                        </button>
+                      </div>
+                    </div>
+                  )}
+                </div>
+              )}
 
               {/* ── Result count ─────────────────────────────────────────────── */}
               {!queryLoading && hasSearched && searchResults.length > 0 && (
@@ -813,6 +952,117 @@ function App(): JSX.Element {
 
               </>)}
             </aside>
+          </div>
+        )}
+
+        {/* ── Explore Tab ──────────────────────────────────────────────────── */}
+        {activeTab === 'explore' && (
+          <div className="explore-page">
+            <div className="explore-hero">
+              <h2 className="explore-hero-title">Explore the Market</h2>
+              <p className="explore-hero-sub">Discover trending tickers, dominant themes, and high-impact articles from our financial corpus</p>
+            </div>
+
+            {exploreLoading && (
+              <div className="loading-row" style={{ justifyContent: 'center', padding: 40 }}>
+                <span className="spinner" />
+                <span className="loading-text">Analyzing corpus…</span>
+              </div>
+            )}
+
+            {exploreData && (
+              <div className="explore-grid">
+                {/* ── Trending Tickers ───────────────────────────────── */}
+                <section className="explore-section">
+                  <h3 className="explore-section-title">🔥 Trending Tickers</h3>
+                  <p className="explore-section-sub">Most mentioned tickers across our news &amp; Reddit corpus</p>
+                  <div className="trending-grid">
+                    {exploreData.trending.map(t => {
+                      const maxMentions = Math.max(...exploreData.trending.map(x => x.mentions), 1)
+                      return (
+                        <div key={t.ticker} className="trending-card">
+                          <div className="trending-card-top">
+                            <span className="trending-ticker">{t.ticker}</span>
+                            <span className={`trending-sentiment ${t.avgSentiment > 0.02 ? 'sent-pos' : t.avgSentiment < -0.02 ? 'sent-neg' : 'sent-neu'}`}>
+                              {t.avgSentiment > 0 ? '+' : ''}{t.avgSentiment.toFixed(3)}
+                            </span>
+                          </div>
+                          <div className="trending-bar-track">
+                            <div className="trending-bar-fill" style={{ width: `${(t.mentions / maxMentions) * 100}%` }} />
+                          </div>
+                          <div className="trending-card-bottom">
+                            <span className="trending-mentions">{t.mentions} mentions</span>
+                            <div className="trending-actions">
+                              <button className="btn-add-small" onClick={() => {
+                                setQueryInput(t.ticker)
+                                setActiveTab('research')
+                              }}>🔍 Research</button>
+                              {!watchlist.some(w => w.ticker === t.ticker) && (
+                                <button className="btn-add-small" onClick={() => { addTicker(t.ticker); setActiveTab('portfolio') }}>+ Portfolio</button>
+                              )}
+                            </div>
+                          </div>
+                        </div>
+                      )
+                    })}
+                  </div>
+                </section>
+
+                {/* ── Market Themes ──────────────────────────────────── */}
+                <section className="explore-section">
+                  <h3 className="explore-section-title">📊 Market Themes</h3>
+                  <p className="explore-section-sub">Dominant topics detected via SVD/LSA decomposition of the corpus</p>
+                  <div className="themes-grid">
+                    {exploreData.themes.map(th => (
+                      <div key={th.index} className="explore-theme-card" onClick={() => {
+                        setQueryInput(th.label.replace(/ & /g, ' '))
+                        setActiveTab('research')
+                      }}>
+                        <div className="explore-theme-header">
+                          <span className="explore-theme-label">{th.label}</span>
+                          <span className="explore-theme-var">{th.variance.toFixed(1)}%</span>
+                        </div>
+                        <div className="explore-theme-keywords">
+                          {th.top_terms.slice(0, 6).map((term, i) => (
+                            <span key={i} className="theme-keyword">{term}</span>
+                          ))}
+                        </div>
+                      </div>
+                    ))}
+                  </div>
+                </section>
+
+                {/* ── Noteworthy Articles ────────────────────────────── */}
+                <section className="explore-section explore-section-full">
+                  <h3 className="explore-section-title">📰 Noteworthy</h3>
+                  <p className="explore-section-sub">Articles with the strongest sentiment signals</p>
+                  <div className="noteworthy-grid">
+                    {exploreData.noteworthy.map((art, i) => (
+                      <div key={i} className="noteworthy-card">
+                        <div className="noteworthy-header">
+                          <span className={`noteworthy-sentiment ${art.sentiment > 0 ? 'sent-pos' : 'sent-neg'}`}>
+                            {art.sentiment > 0 ? '▲ Positive' : '▼ Negative'} ({art.sentiment.toFixed(3)})
+                          </span>
+                          {art.date && <span className="noteworthy-date">{art.date}</span>}
+                        </div>
+                        <p className="noteworthy-title">
+                          {art.url ? (
+                            <a href={art.url} target="_blank" rel="noopener noreferrer">{art.title}</a>
+                          ) : art.title}
+                        </p>
+                        {art.tickers.length > 0 && (
+                          <div className="noteworthy-tickers">
+                            {art.tickers.map(t => (
+                              <span key={t} className="ticker-tag">{t}</span>
+                            ))}
+                          </div>
+                        )}
+                      </div>
+                    ))}
+                  </div>
+                </section>
+              </div>
+            )}
           </div>
         )}
 

@@ -234,3 +234,69 @@ def register_chat_route(app):
             logger.error(f"RAG pipeline error: {e}", exc_info=True)
             return jsonify({"error": str(e)}), 500
 
+    @app.route("/api/research-chat", methods=["POST"])
+    def research_chat():
+        """Conversational research assistant grounded in search results."""
+        data = request.get_json() or {}
+        messages = data.get("messages") or []
+        context = data.get("context") or {}
+        search_results = context.get("results") or []
+        original_query = context.get("query") or ""
+
+        if not messages:
+            return jsonify({"error": "messages required"}), 400
+
+        api_key = os.getenv("SPARK_API_KEY")
+        if not api_key:
+            return jsonify({"error": "SPARK_API_KEY not set"}), 500
+
+        try:
+            client = LLMClient(api_key=api_key)
+
+            # Build context from search results
+            context_parts = []
+            for i, r in enumerate(search_results[:10], 1):
+                source_label = "News" if r.get("source") == "news" else "Reddit"
+                date_str = r.get("date", "unknown")
+                title = r.get("title", "")
+                snippet = r.get("snippet", "")
+                tickers = ", ".join(r.get("tickers", [])) or "N/A"
+                text = title
+                if snippet and snippet != title:
+                    text += f"\n{snippet}"
+                context_parts.append(
+                    f"[{i}] ({source_label}, {date_str}, Tickers: {tickers})\n{text}"
+                )
+            context_text = "\n\n---\n\n".join(context_parts) if context_parts else "No search results available."
+
+            system_msg = {
+                "role": "system",
+                "content": (
+                    "You are a financial research assistant for the RiskLens platform. "
+                    "The user has searched for financial information and you have access to "
+                    "the search results below. Answer follow-up questions based on these results.\n\n"
+                    "Rules:\n"
+                    "- Reference sources using [1], [2], etc. citations\n"
+                    "- Be concise but thorough\n"
+                    "- If the results don't contain enough information, say so\n"
+                    "- Do NOT invent information not present in the sources\n"
+                    "- Use **bold** for tickers and key terms\n"
+                    "- Keep responses focused and under 3 paragraphs\n\n"
+                    f"Original search query: \"{original_query}\"\n\n"
+                    f"Search results:\n\n{context_text}"
+                ),
+            }
+
+            # Build full message list: system + conversation history
+            llm_messages = [system_msg] + [
+                {"role": m.get("role", "user"), "content": m.get("content", "")}
+                for m in messages
+            ]
+
+            resp = client.chat(llm_messages)
+            content = (resp.get("content") or "Unable to generate response.").strip()
+            return jsonify({"content": content})
+
+        except Exception as e:
+            logger.error(f"Research chat error: {e}", exc_info=True)
+            return jsonify({"error": str(e)}), 500
